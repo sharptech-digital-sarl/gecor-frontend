@@ -1,0 +1,28 @@
+# Development Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Configure npm for better network handling
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm config set registry https://registry.npmjs.org/
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies with retry logic and network resilience
+RUN npm install --prefer-offline --no-audit --legacy-peer-deps || \
+    (echo "First attempt failed, retrying..." && sleep 10 && npm install --prefer-offline --no-audit --legacy-peer-deps) || \
+    (echo "Second attempt failed, retrying..." && sleep 15 && npm install --prefer-offline --no-audit --legacy-peer-deps)
+
+# Copy application code
+COPY . .
+
+EXPOSE 3000
+
+# Start development server with hot reload
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
