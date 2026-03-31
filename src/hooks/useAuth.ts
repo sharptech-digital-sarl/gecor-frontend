@@ -3,12 +3,14 @@ import api from '../services/api'
 import { tokenService } from '../services/tokenService'
 
 interface User {
-  id: number
+  id: string
   username: string
   email: string
   full_name: string
   role: string
   is_mfa_enabled?: boolean
+  /** Effective permission keys from GET /auth/me */
+  permissions?: string[]
 }
 
 interface LoginResponse {

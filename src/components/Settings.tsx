@@ -23,7 +23,6 @@ export default function Settings({ open, onClose }: SettingsProps) {
   const { t } = useTranslation()
   const [language, setLanguage] = useState(i18n.language || 'en')
 
-  // Sync language state with i18n
   useEffect(() => {
     setLanguage(i18n.language || 'en')
   }, [i18n.language])
@@ -32,6 +31,11 @@ export default function Settings({ open, onClose }: SettingsProps) {
     setLanguage(newLanguage)
     i18n.changeLanguage(newLanguage)
     localStorage.setItem('i18nextLng', newLanguage)
+  }
+
+  // Ne pas monter le Modal MUI tant que le dialogue est fermé (évite aria-hidden sur #root).
+  if (!open) {
+    return null
   }
 
   return (
