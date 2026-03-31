@@ -9,6 +9,7 @@ interface User {
   full_name: string
   role: string
   is_mfa_enabled?: boolean
+  google_account_email?: string | null
   /** Effective permission keys from GET /auth/me */
   permissions?: string[]
 }

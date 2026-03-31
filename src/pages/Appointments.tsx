@@ -34,6 +34,7 @@ import {
   HowToReg as HowToRegIcon,
   TaskAlt as TaskAltIcon,
   PersonOff as PersonOffIcon,
+  QrCodeScanner as QrCodeScannerIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
@@ -79,7 +80,13 @@ export default function Appointments() {
   const [visitorPhotoUrl, setVisitorPhotoUrl] = useState<string | null>(null)
   const [visitorPhotoLoading, setVisitorPhotoLoading] = useState(false)
   const [visitorPhotoZoomOpen, setVisitorPhotoZoomOpen] = useState(false)
+  const [qrPayload, setQrPayload] = useState('')
+  const [qrScanError, setQrScanError] = useState('')
+  const [isQrScanning, setIsQrScanning] = useState(false)
   const visitorPhotoBlobRef = useRef<string | null>(null)
+  const qrVideoRef = useRef<HTMLVideoElement | null>(null)
+  const qrStreamRef = useRef<MediaStream | null>(null)
+  const qrTimerRef = useRef<number | null>(null)
   const { sortBy, sortDir, toggleSort, sortRows } = useTableSort<SortKey>('start_time', 'desc')
 
   const canCreate = hasPermission(user, 'appointments.create')
@@ -104,6 +111,26 @@ export default function Appointments() {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
       queryClient.invalidateQueries({ queryKey: ['appointments'] })
       queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+    },
+  })
+
+  const checkInByQrMutation = useMutation({
+    mutationFn: async (raw: string) => {
+      const response = await api.post('/appointments/check-in-by-qr', { raw })
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setQrPayload('')
+      setActionMessage({ type: 'success', text: t('appointments.qrCheckInSuccess') })
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.qrCheckInFailed'),
+      })
     },
   })
 
@@ -323,6 +350,61 @@ export default function Appointments() {
     if (!viewOpen) setVisitorPhotoZoomOpen(false)
   }, [viewOpen])
 
+  const stopQrScan = () => {
+    setIsQrScanning(false)
+    if (qrTimerRef.current) {
+      window.clearInterval(qrTimerRef.current)
+      qrTimerRef.current = null
+    }
+    if (qrVideoRef.current) {
+      qrVideoRef.current.srcObject = null
+    }
+    if (qrStreamRef.current) {
+      qrStreamRef.current.getTracks().forEach((track) => track.stop())
+      qrStreamRef.current = null
+    }
+  }
+
+  const startQrScan = async () => {
+    setQrScanError('')
+    const BarcodeDetectorCtor = (window as any).BarcodeDetector
+    if (!BarcodeDetectorCtor) {
+      setQrScanError(t('appointments.qrScannerUnsupported'))
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      })
+      qrStreamRef.current = stream
+      if (qrVideoRef.current) {
+        qrVideoRef.current.srcObject = stream
+        await qrVideoRef.current.play()
+      }
+      const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] })
+      setIsQrScanning(true)
+      qrTimerRef.current = window.setInterval(async () => {
+        if (!qrVideoRef.current) return
+        try {
+          const codes = await detector.detect(qrVideoRef.current)
+          if (codes?.length && codes[0]?.rawValue) {
+            const rawValue = String(codes[0].rawValue)
+            setQrPayload(rawValue)
+            stopQrScan()
+          }
+        } catch {
+          // Ignore transient detector errors and keep scanning.
+        }
+      }, 600)
+    } catch (err: any) {
+      stopQrScan()
+      setQrScanError(err?.message || t('appointments.qrScannerStartFailed'))
+    }
+  }
+
+  useEffect(() => () => stopQrScan(), [])
+
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
@@ -355,6 +437,56 @@ export default function Appointments() {
         >
           {actionMessage.text}
         </Alert>
+      )}
+
+      {canCheckIn && (
+        <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            {t('appointments.qrCheckInTitle')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t('appointments.qrCheckInSubtitle')}
+          </Typography>
+          {qrScanError && (
+            <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setQrScanError('')}>
+              {qrScanError}
+            </Alert>
+          )}
+          <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+            <TextField
+              label={t('appointments.qrPayloadLabel')}
+              value={qrPayload}
+              onChange={(e) => setQrPayload(e.target.value)}
+              size="small"
+              sx={{ minWidth: 320, flex: 1 }}
+            />
+            <Button
+              variant="contained"
+              startIcon={<CheckIcon />}
+              onClick={() => checkInByQrMutation.mutate(qrPayload)}
+              disabled={!qrPayload.trim() || checkInByQrMutation.isPending}
+            >
+              {t('appointments.qrCheckInAction')}
+            </Button>
+            {!isQrScanning ? (
+              <Button variant="outlined" startIcon={<QrCodeScannerIcon />} onClick={startQrScan}>
+                {t('appointments.qrStartScan')}
+              </Button>
+            ) : (
+              <Button variant="outlined" color="warning" onClick={stopQrScan}>
+                {t('appointments.qrStopScan')}
+              </Button>
+            )}
+          </Box>
+          <Box sx={{ mt: 2, display: isQrScanning ? 'block' : 'none' }}>
+            <video
+              ref={qrVideoRef}
+              muted
+              playsInline
+              style={{ width: '100%', maxWidth: 460, borderRadius: 12, border: '1px solid #ddd' }}
+            />
+          </Box>
+        </Paper>
       )}
 
       {error && (

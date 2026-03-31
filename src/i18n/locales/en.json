@@ -242,7 +242,17 @@
     "noShowButton": "No-show (visitor absent)",
     "noShowSuccess": "Appointment recorded as no-show.",
     "noShowFailed": "Could not record the no-show.",
-    "checkInDetailLabel": "Confirm"
+    "checkInDetailLabel": "Confirm",
+    "qrCheckInTitle": "QR check-in",
+    "qrCheckInSubtitle": "Scan the visitor QR with the camera or paste the raw QR payload.",
+    "qrPayloadLabel": "QR payload (APPT-…)",
+    "qrCheckInAction": "Check in by QR",
+    "qrCheckInSuccess": "Visitor checked in by QR.",
+    "qrCheckInFailed": "Could not check in visitor by QR.",
+    "qrStartScan": "Start scan",
+    "qrStopScan": "Stop scan",
+    "qrScannerUnsupported": "Camera scan is not supported in this browser. Use manual input.",
+    "qrScannerStartFailed": "Could not start camera scanning for QR."
   },
   "deletionRequests": {
     "title": "Deletion requests",
@@ -309,7 +319,18 @@
     "subtitle": "Account list and system roles (admin access)",
     "loadError": "Could not load users. Check your permissions (director or master).",
     "rolesSection": "Groups / roles",
+    "expandRolesInfo": "Show help",
+    "collapseRolesInfo": "Hide help",
     "rolesIntro": "Roles define permissions in the application. Only a master account can change a user's role.",
+    "searchLabel": "Search",
+    "searchPlaceholder": "Name, username, email or role",
+    "filterRoleLabel": "Filter by role",
+    "filterAllRoles": "All roles",
+    "filterStatusLabel": "Filter by status",
+    "filterAllStatuses": "All statuses",
+    "filterStatusActive": "Active",
+    "filterStatusInactive": "Inactive",
+    "noUsersMatchFilters": "No users match the current filters.",
     "fullName": "Full name",
     "email": "Email",
     "role": "Role",
@@ -353,7 +374,16 @@
     "deleteGroupTitle": "Delete group",
     "deleteGroupConfirm": "Permanently delete the group \"{{name}}\"? This cannot be undone. If any users still have this group, reassign them first.",
     "deleteGroupFailed": "Could not delete the group.",
-    "deleteGroupAria": "Delete this group"
+    "deleteGroupAria": "Delete this group",
+    "deleteSelectedUsers": "Delete selected ({{count}})",
+    "deleteSelectedUsersConfirm": "Delete {{count}} selected user(s)?",
+    "deleteSelectedGroups": "Delete selected groups ({{count}})",
+    "deleteSelectedGroupsConfirm": "Delete {{count}} selected group(s)?",
+    "selectAllUsersAria": "Select all deletable users",
+    "selectUserAria": "Select user {{username}}",
+    "selectGroupAria": "Select group {{name}}",
+    "selectAllGroups": "Select all",
+    "unselectAllGroups": "Unselect all"
   }
 }
 

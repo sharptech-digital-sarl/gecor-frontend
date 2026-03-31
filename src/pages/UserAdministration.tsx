@@ -4,6 +4,7 @@ import {
   Box,
   Typography,
   Paper,
+  Collapse,
   Table,
   TableBody,
   TableCell,
@@ -58,12 +59,6 @@ type AdminUser = {
 
 const DEFAULT_ROLE_DOC_KEYS = ['master', 'director', 'secretary', 'analyst', 'receptionist', 'guest'] as const
 
-const BUILTIN_ROLE_SET = new Set<string>(DEFAULT_ROLE_DOC_KEYS)
-
-function isDeletableCustomRole(roleName: string): boolean {
-  return !BUILTIN_ROLE_SET.has(roleName.trim().toLowerCase())
-}
-
 type SortKey = 'username' | 'full_name' | 'email' | 'role' | 'is_active'
 
 type RoleDto = {
@@ -96,6 +91,12 @@ export default function UserAdministration() {
   const [newGroupDescription, setNewGroupDescription] = useState('')
   const [createGroupError, setCreateGroupError] = useState('')
   const [deleteRoleTarget, setDeleteRoleTarget] = useState<RoleDto | null>(null)
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([])
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
+  const [rolesInfoOpen, setRolesInfoOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const { sortBy, sortDir, toggleSort, sortRows } = useTableSort<SortKey>('full_name', 'asc')
 
   const canEditRoles = isMasterUser(currentUser?.role)
@@ -194,6 +195,24 @@ export default function UserAdministration() {
     },
   })
 
+  const bulkDeleteRolesMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await api.post('/roles/bulk-delete', { ids })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-roles'] })
+    },
+  })
+
+  const bulkDeleteUsersMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await api.post('/users/bulk-delete', { ids })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+  })
+
   const createRoleMutation = useMutation({
     mutationFn: async (payload: { name: string; description: string }) => {
       const response = await api.post<RoleDto>('/roles/', {
@@ -225,8 +244,25 @@ export default function UserAdministration() {
     })
   }
 
-  const sorted = users
-    ? sortRows(users, (row, key) => {
+  const userRoleOptions = Array.from(new Set((users ?? []).map((u) => u.role))).sort((a, b) =>
+    a.localeCompare(b)
+  )
+
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+  const filteredUsers = (users ?? []).filter((u) => {
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false
+    if (statusFilter === 'active' && !u.is_active) return false
+    if (statusFilter === 'inactive' && u.is_active) return false
+    if (!normalizedSearch) return true
+    return (
+      u.username.toLowerCase().includes(normalizedSearch) ||
+      u.full_name.toLowerCase().includes(normalizedSearch) ||
+      u.email.toLowerCase().includes(normalizedSearch) ||
+      u.role.toLowerCase().includes(normalizedSearch)
+    )
+  })
+
+  const sorted = sortRows(filteredUsers, (row, key) => {
         switch (key) {
           case 'username':
             return row.username
@@ -242,7 +278,17 @@ export default function UserAdministration() {
             return ''
         }
       })
-    : []
+
+  const deletableRoleIds = (roleList ?? []).filter((r) => !isCurrentUserRole(r.name)).map((r) => r.id)
+
+  const selectableUserIds = (sorted ?? [])
+    .filter((u) => !isMasterUser(u.role))
+    .map((u) => u.id)
+
+  useEffect(() => {
+    const visibleIds = new Set(sorted.map((u) => u.id))
+    setSelectedUserIds((prev) => prev.filter((id) => visibleIds.has(id)))
+  }, [sorted])
 
   const submitNewUser = () => {
     setNewUserError('')
@@ -273,6 +319,43 @@ export default function UserAdministration() {
   const roleSelectLabel = (name: string) =>
     t(`usersAdmin.roleNames.${name}`, { defaultValue: name.replace(/_/g, ' ') })
 
+  const isCurrentUserRole = (roleName: string) =>
+    roleName.trim().toLowerCase() === (currentUser?.role || '').trim().toLowerCase()
+
+  const toggleUserSelection = (id: string) => {
+    setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const toggleRoleSelection = (id: string) => {
+    setSelectedRoleIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const selectAllUsers = () => {
+    setSelectedUserIds((prev) =>
+      prev.length === selectableUserIds.length ? [] : [...selectableUserIds]
+    )
+  }
+
+  const selectAllRoles = () => {
+    setSelectedRoleIds((prev) =>
+      prev.length === deletableRoleIds.length ? [] : [...deletableRoleIds]
+    )
+  }
+
+  const deleteSelectedUsers = async () => {
+    if (!selectedUserIds.length) return
+    if (!window.confirm(t('usersAdmin.deleteSelectedUsersConfirm', { count: selectedUserIds.length }))) return
+    await bulkDeleteUsersMutation.mutateAsync(selectedUserIds)
+    setSelectedUserIds([])
+  }
+
+  const deleteSelectedRoles = async () => {
+    if (!selectedRoleIds.length) return
+    if (!window.confirm(t('usersAdmin.deleteSelectedGroupsConfirm', { count: selectedRoleIds.length }))) return
+    await bulkDeleteRolesMutation.mutateAsync(selectedRoleIds)
+    setSelectedRoleIds([])
+  }
+
   return (
     <Box>
       <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
@@ -293,6 +376,17 @@ export default function UserAdministration() {
             {t('usersAdmin.manageGroups')}
           </Button>
         )}
+        {canEditRoles && (
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteOutlineIcon />}
+            disabled={!selectedUserIds.length || bulkDeleteUsersMutation.isPending}
+            onClick={() => void deleteSelectedUsers()}
+          >
+            {t('usersAdmin.deleteSelectedUsers', { count: selectedUserIds.length })}
+          </Button>
+        )}
       </Stack>
 
       {error && (
@@ -302,33 +396,99 @@ export default function UserAdministration() {
       )}
 
       <Paper sx={{ p: 2, mb: 4, borderRadius: 2 }}>
-        <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-          {t('usersAdmin.rolesSection')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
-          {t('usersAdmin.rolesIntro')}
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {DEFAULT_ROLE_DOC_KEYS.map((r) => (
-            <Box key={r}>
-              <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>
-                {t(`usersAdmin.roleNames.${r}`)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t(`usersAdmin.roleDesc.${r}`)}
-              </Typography>
-            </Box>
-          ))}
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-            {t('usersAdmin.customGroupsHint')}
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            {t('usersAdmin.rolesSection')}
           </Typography>
-        </Box>
+          <Button
+            size="small"
+            endIcon={<ExpandMoreIcon sx={{ transform: rolesInfoOpen ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />}
+            onClick={() => setRolesInfoOpen((v) => !v)}
+          >
+            {rolesInfoOpen ? t('usersAdmin.collapseRolesInfo') : t('usersAdmin.expandRolesInfo')}
+          </Button>
+        </Stack>
+        <Collapse in={rolesInfoOpen}>
+          <Typography variant="body2" color="text.secondary" paragraph>
+            {t('usersAdmin.rolesIntro')}
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {DEFAULT_ROLE_DOC_KEYS.map((r) => (
+              <Box key={r}>
+                <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>
+                  {t(`usersAdmin.roleNames.${r}`)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t(`usersAdmin.roleDesc.${r}`)}
+                </Typography>
+              </Box>
+            ))}
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              {t('usersAdmin.customGroupsHint')}
+            </Typography>
+          </Box>
+        </Collapse>
+      </Paper>
+
+      <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <TextField
+            fullWidth
+            label={t('usersAdmin.searchLabel')}
+            placeholder={t('usersAdmin.searchPlaceholder')}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>{t('usersAdmin.filterRoleLabel')}</InputLabel>
+            <Select
+              label={t('usersAdmin.filterRoleLabel')}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <MenuItem value="all">{t('usersAdmin.filterAllRoles')}</MenuItem>
+              {userRoleOptions.map((r) => (
+                <MenuItem key={r} value={r}>
+                  {roleSelectLabel(r)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ minWidth: 180 }}>
+            <InputLabel>{t('usersAdmin.filterStatusLabel')}</InputLabel>
+            <Select
+              label={t('usersAdmin.filterStatusLabel')}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+            >
+              <MenuItem value="all">{t('usersAdmin.filterAllStatuses')}</MenuItem>
+              <MenuItem value="active">{t('usersAdmin.filterStatusActive')}</MenuItem>
+              <MenuItem value="inactive">{t('usersAdmin.filterStatusInactive')}</MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
       </Paper>
 
       <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
         <Table size="small">
           <TableHead>
             <TableRow>
+              {canEditRoles && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={
+                      selectedUserIds.length > 0 &&
+                      selectedUserIds.length < selectableUserIds.length
+                    }
+                    checked={
+                      selectableUserIds.length > 0 &&
+                      selectedUserIds.length === selectableUserIds.length
+                    }
+                    onChange={selectAllUsers}
+                    inputProps={{ 'aria-label': t('usersAdmin.selectAllUsersAria') }}
+                  />
+                </TableCell>
+              )}
               <TableCell>
                 <TableSortLabel
                   active={sortBy === 'username'}
@@ -380,13 +540,31 @@ export default function UserAdministration() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={canEditRoles ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <CircularProgress size={28} />
+                </TableCell>
+              </TableRow>
+            ) : sorted.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={canEditRoles ? 7 : 6} align="center" sx={{ py: 3 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('usersAdmin.noUsersMatchFilters')}
+                  </Typography>
                 </TableCell>
               </TableRow>
             ) : (
               sorted.map((u) => (
                 <TableRow key={u.id} hover>
+                  {canEditRoles && (
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={selectedUserIds.includes(u.id)}
+                        disabled={isMasterUser(u.role)}
+                        onChange={() => toggleUserSelection(u.id)}
+                        inputProps={{ 'aria-label': t('usersAdmin.selectUserAria', { username: u.username }) }}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>{u.username}</TableCell>
                   <TableCell>{u.full_name}</TableCell>
                   <TableCell>{u.email}</TableCell>
@@ -562,19 +740,33 @@ export default function UserAdministration() {
             {t('usersAdmin.groupsModalIntro')}
           </Typography>
           {canEditRoles && (
-            <Button
-              variant="outlined"
-              startIcon={<AddIcon />}
-              sx={{ mb: 2 }}
-              onClick={() => {
-                setCreateGroupError('')
-                setNewGroupName('')
-                setNewGroupDescription('')
-                setCreateGroupOpen(true)
-              }}
-            >
-              {t('usersAdmin.newGroup')}
-            </Button>
+            <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => {
+                  setCreateGroupError('')
+                  setNewGroupName('')
+                  setNewGroupDescription('')
+                  setCreateGroupOpen(true)
+                }}
+              >
+                {t('usersAdmin.newGroup')}
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteOutlineIcon />}
+                disabled={
+                  !selectedRoleIds.length ||
+                  deleteRoleMutation.isPending ||
+                  bulkDeleteRolesMutation.isPending
+                }
+                onClick={() => void deleteSelectedRoles()}
+              >
+                {t('usersAdmin.deleteSelectedGroups', { count: selectedRoleIds.length })}
+              </Button>
+            </Stack>
           )}
           {rolesLoading || catalogLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -587,10 +779,18 @@ export default function UserAdministration() {
                   expandIcon={<ExpandMoreIcon />}
                   sx={{ '& .MuiAccordionSummary-content': { alignItems: 'center', gap: 1, mr: 1 } }}
                 >
+                  {canEditRoles && !isCurrentUserRole(role.name) && (
+                    <Checkbox
+                      checked={selectedRoleIds.includes(role.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleRoleSelection(role.id)}
+                      inputProps={{ 'aria-label': t('usersAdmin.selectGroupAria', { name: role.name }) }}
+                    />
+                  )}
                   <Typography sx={{ flex: 1, textTransform: 'capitalize', fontWeight: 600 }}>
                     {role.name}
                   </Typography>
-                  {canEditRoles && isDeletableCustomRole(role.name) && (
+                  {canEditRoles && !isCurrentUserRole(role.name) && (
                     <IconButton
                       size="small"
                       color="error"
@@ -647,6 +847,13 @@ export default function UserAdministration() {
           )}
         </DialogContent>
         <DialogActions>
+          {canEditRoles && (
+            <Button onClick={selectAllRoles}>
+              {deletableRoleIds.length > 0 && selectedRoleIds.length === deletableRoleIds.length
+                ? t('usersAdmin.unselectAllGroups')
+                : t('usersAdmin.selectAllGroups')}
+            </Button>
+          )}
           <Button onClick={() => setGroupsOpen(false)}>{t('common.close')}</Button>
         </DialogActions>
       </Dialog>

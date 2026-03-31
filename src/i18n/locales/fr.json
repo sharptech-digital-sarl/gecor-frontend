@@ -242,7 +242,17 @@
     "noShowButton": "Absent (no show)",
     "noShowSuccess": "Rendez-vous enregistré comme absent (no show).",
     "noShowFailed": "Impossible d’enregistrer l’absence du visiteur.",
-    "checkInDetailLabel": "Confirmer"
+    "checkInDetailLabel": "Confirmer",
+    "qrCheckInTitle": "Enregistrement par QR",
+    "qrCheckInSubtitle": "Scannez le QR du visiteur avec la caméra ou collez le contenu brut du code.",
+    "qrPayloadLabel": "Contenu QR (APPT-…)",
+    "qrCheckInAction": "Enregistrer via QR",
+    "qrCheckInSuccess": "Visiteur enregistré via QR.",
+    "qrCheckInFailed": "Échec de l’enregistrement via QR.",
+    "qrStartScan": "Démarrer le scan",
+    "qrStopScan": "Arrêter le scan",
+    "qrScannerUnsupported": "Le scan caméra n'est pas supporté dans ce navigateur. Utilisez la saisie manuelle.",
+    "qrScannerStartFailed": "Impossible de démarrer la caméra pour scanner le QR."
   },
   "deletionRequests": {
     "title": "Demandes de suppression",
@@ -309,7 +319,18 @@
     "subtitle": "Liste des comptes et rôles système (accès administrateur)",
     "loadError": "Impossible de charger les utilisateurs. Vérifiez vos droits (directeur ou master).",
     "rolesSection": "Groupes / rôles",
+    "expandRolesInfo": "Afficher l'aide",
+    "collapseRolesInfo": "Masquer l'aide",
     "rolesIntro": "Les rôles définissent les permissions dans l'application. Seul le compte master peut modifier le rôle d'un utilisateur.",
+    "searchLabel": "Recherche",
+    "searchPlaceholder": "Nom, identifiant, e-mail ou rôle",
+    "filterRoleLabel": "Filtrer par rôle",
+    "filterAllRoles": "Tous les rôles",
+    "filterStatusLabel": "Filtrer par état",
+    "filterAllStatuses": "Tous les états",
+    "filterStatusActive": "Actifs",
+    "filterStatusInactive": "Inactifs",
+    "noUsersMatchFilters": "Aucun utilisateur ne correspond aux filtres.",
     "fullName": "Nom complet",
     "email": "E-mail",
     "role": "Rôle",
@@ -321,7 +342,7 @@
       "director": "Directeur",
       "secretary": "Secrétaire",
       "analyst": "Analyste",
-      "receptionist": "Réception",
+      "receptionist": "Réceptionniste",
       "guest": "Invité"
     },
     "roleDesc": {
@@ -353,7 +374,16 @@
     "deleteGroupTitle": "Supprimer le groupe",
     "deleteGroupConfirm": "Supprimer définitivement le groupe « {{name}} » ? Cette action est irréversible. Si des utilisateurs ont encore ce groupe, réattribuez-les d’abord.",
     "deleteGroupFailed": "Impossible de supprimer le groupe.",
-    "deleteGroupAria": "Supprimer ce groupe"
+    "deleteGroupAria": "Supprimer ce groupe",
+    "deleteSelectedUsers": "Supprimer sélection ({{count}})",
+    "deleteSelectedUsersConfirm": "Supprimer {{count}} utilisateur(s) sélectionné(s) ?",
+    "deleteSelectedGroups": "Supprimer groupes sélectionnés ({{count}})",
+    "deleteSelectedGroupsConfirm": "Supprimer {{count}} groupe(s) sélectionné(s) ?",
+    "selectAllUsersAria": "Sélectionner tous les utilisateurs supprimables",
+    "selectUserAria": "Sélectionner l'utilisateur {{username}}",
+    "selectGroupAria": "Sélectionner le groupe {{name}}",
+    "selectAllGroups": "Tout sélectionner",
+    "unselectAllGroups": "Tout désélectionner"
   }
 }
 

@@ -36,6 +36,8 @@ export default function PublicBooking() {
     },
   })
 
+  const bookedVisitorQrCode = bookingMutation.data?.visitor?.qr_code as string | undefined
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -72,6 +74,23 @@ export default function PublicBooking() {
             <Alert severity="success" sx={{ mb: 3 }}>
               Appointment request submitted successfully! You will receive a confirmation email.
             </Alert>
+          )}
+          {bookingMutation.isSuccess && bookedVisitorQrCode && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                Visitor QR code
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Keep this QR code and present it at reception for a fast check-in.
+              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                <img
+                  src={`data:image/png;base64,${bookedVisitorQrCode}`}
+                  alt="Visitor QR code"
+                  style={{ width: 240, height: 240, objectFit: 'contain' }}
+                />
+              </Box>
+            </Paper>
           )}
 
           {bookingMutation.isError && (
