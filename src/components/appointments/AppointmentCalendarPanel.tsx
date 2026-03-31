@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   Typography,
@@ -13,6 +13,8 @@ import {
   Alert,
   Chip,
   Avatar,
+  Tooltip,
+  IconButton,
 } from '@mui/material'
 import { Calendar, momentLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
@@ -27,7 +29,17 @@ import duration from 'dayjs/plugin/duration'
 import minMax from 'dayjs/plugin/minMax'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../../hooks/useDateFormat'
+import { useAuth } from '../../hooks/useAuth'
 import api from '../../services/api'
+import VisitorPhotoZoomDialog from './VisitorPhotoZoomDialog'
+import { hasPermission } from '../../utils/permissions'
+import {
+  ZoomIn as ZoomInIcon,
+  HowToReg as HowToRegIcon,
+  TaskAlt as TaskAltIcon,
+  DeleteOutline as DeleteOutlineIcon,
+  PersonOff as PersonOffIcon,
+} from '@mui/icons-material'
 
 dayjs.extend(isSameOrBefore)
 dayjs.extend(isSameOrAfter)
@@ -76,9 +88,13 @@ function mailDocumentToEvent(doc: any): CalendarEvent {
 export default function AppointmentCalendarPanel() {
   const { t, i18n } = useTranslation()
   const { formatDateTime } = useDateFormat()
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const canDeleteApt = hasPermission(user, 'appointments.delete')
   const [viewOpen, setViewOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [visitorPhotoUrl, setVisitorPhotoUrl] = useState<string | null>(null)
+  const [visitorPhotoZoomOpen, setVisitorPhotoZoomOpen] = useState(false)
   const visitorPhotoBlobRef = useRef<string | null>(null)
   const [openingMail, setOpeningMail] = useState(false)
 
@@ -172,6 +188,67 @@ export default function AppointmentCalendarPanel() {
     }
   }, [viewOpen, selectedEvent])
 
+  useEffect(() => {
+    if (!viewOpen) setVisitorPhotoZoomOpen(false)
+  }, [viewOpen])
+
+  const confirmMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/confirm`)
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      setSelectedEvent((prev) =>
+        prev?.eventType === 'appointment' && prev.resource && String(prev.resource.id) === String(data.id)
+          ? { ...prev, resource: { ...prev.resource, ...data } }
+          : prev
+      )
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/complete`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      setViewOpen(false)
+    },
+  })
+
+  const noShowMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/no-show`)
+      return response.data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      setSelectedEvent((prev) =>
+        prev?.eventType === 'appointment' && prev.resource && String(prev.resource.id) === String(data.id)
+          ? { ...prev, resource: { ...prev.resource, ...data } }
+          : prev
+      )
+      setViewOpen(false)
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/cancel`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      setViewOpen(false)
+    },
+  })
+
   const openMailFile = useCallback(async () => {
     if (selectedEvent?.eventType !== 'mail' || !selectedEvent.resource?.id) return
     setOpeningMail(true)
@@ -200,6 +277,37 @@ export default function AppointmentCalendarPanel() {
       },
     }
   }
+
+  const appointmentStatusLabel = (status?: string) => {
+    switch (status) {
+      case 'pending':
+        return t('appointments.statusPending')
+      case 'confirmed':
+        return t('appointments.statusConfirmed')
+      case 'cancelled':
+        return t('appointments.statusCancelled')
+      case 'completed':
+        return t('appointments.statusCompleted')
+      case 'no_show':
+        return t('appointments.statusNoShow')
+      default:
+        return status || '—'
+    }
+  }
+
+  const isVisitHostCalendar = (apt: { organizer_id?: string }) =>
+    user?.id != null &&
+    apt?.organizer_id != null &&
+    String(user.id) === String(apt.organizer_id)
+
+  const canConfirmAptCalendar = (apt: { organizer_id?: string }) =>
+    isVisitHostCalendar(apt) || user?.role === 'master'
+
+  const canCompleteAptCalendar = (apt: { organizer_id?: string }) =>
+    isVisitHostCalendar(apt) || user?.role === 'master' || canDeleteApt
+
+  const canCancelAptCalendar = (apt: { organizer_id?: string }) =>
+    isVisitHostCalendar(apt) || canDeleteApt
 
   const mailStatusLabel = (status?: string) => {
     switch (status) {
@@ -290,17 +398,71 @@ export default function AppointmentCalendarPanel() {
         <DialogContent>
           {selectedEvent?.eventType === 'appointment' && selectedEvent.resource && (
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-              <Avatar
-                src={visitorPhotoUrl || undefined}
-                alt={selectedEvent.resource.visitor_name || ''}
-                sx={{ width: 96, height: 96, flexShrink: 0 }}
-              >
-                {(selectedEvent.resource.visitor_name || selectedEvent.resource.title || '?')
-                  .toString()
-                  .trim()
-                  .charAt(0)
-                  .toUpperCase()}
-              </Avatar>
+              <Box sx={{ flexShrink: 0 }}>
+                <Tooltip
+                  title={visitorPhotoUrl ? t('appointments.visitorPhotoZoomEnlarge') : ''}
+                  disableHoverListener={!visitorPhotoUrl}
+                >
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      width: 96,
+                      height: 96,
+                      cursor: visitorPhotoUrl ? 'zoom-in' : 'default',
+                    }}
+                    onClick={() => visitorPhotoUrl && setVisitorPhotoZoomOpen(true)}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && visitorPhotoUrl) {
+                        e.preventDefault()
+                        setVisitorPhotoZoomOpen(true)
+                      }
+                    }}
+                    role={visitorPhotoUrl ? 'button' : undefined}
+                    tabIndex={visitorPhotoUrl ? 0 : undefined}
+                  >
+                    <Avatar
+                      src={visitorPhotoUrl || undefined}
+                      alt={selectedEvent.resource.visitor_name || ''}
+                      imgProps={{
+                        onError: () => {
+                          if (visitorPhotoBlobRef.current) {
+                            URL.revokeObjectURL(visitorPhotoBlobRef.current)
+                            visitorPhotoBlobRef.current = null
+                          }
+                          setVisitorPhotoUrl(null)
+                        },
+                      }}
+                      sx={{ width: 96, height: 96, bgcolor: 'primary.main', fontSize: '2rem' }}
+                    >
+                      {(selectedEvent.resource.visitor_name || selectedEvent.resource.title || '?')
+                        .toString()
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Avatar>
+                    {visitorPhotoUrl && (
+                      <IconButton
+                        size="small"
+                        aria-label={t('appointments.visitorPhotoZoomEnlarge')}
+                        sx={{
+                          position: 'absolute',
+                          bottom: -6,
+                          right: -6,
+                          bgcolor: 'background.paper',
+                          boxShadow: 2,
+                          '&:hover': { bgcolor: 'background.paper' },
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setVisitorPhotoZoomOpen(true)
+                        }}
+                      >
+                        <ZoomInIcon fontSize="small" color="primary" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Tooltip>
+              </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="h6" gutterBottom>
                   {selectedEvent.resource.title}
@@ -333,6 +495,10 @@ export default function AppointmentCalendarPanel() {
                     )}
                   </>
                 )}
+                <Typography variant="body2" paragraph>
+                  <strong>{t('appointments.appointmentStatus')}:</strong>{' '}
+                  {appointmentStatusLabel(selectedEvent.resource.status)}
+                </Typography>
               </Box>
             </Box>
           )}
@@ -378,10 +544,78 @@ export default function AppointmentCalendarPanel() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Button onClick={() => setViewOpen(false)}>{t('common.close')}</Button>
+          {selectedEvent?.eventType === 'appointment' && selectedEvent.resource && (
+            <>
+              {selectedEvent.resource.status === 'pending' &&
+                canConfirmAptCalendar(selectedEvent.resource) && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    startIcon={<HowToRegIcon />}
+                    onClick={() => confirmMutation.mutate(selectedEvent.resource.id)}
+                    disabled={confirmMutation.isPending}
+                  >
+                    {confirmMutation.isPending ? t('common.loading') : t('appointments.confirmAppointment')}
+                  </Button>
+                )}
+              {selectedEvent.resource.status === 'confirmed' &&
+                canCompleteAptCalendar(selectedEvent.resource) && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<TaskAltIcon />}
+                    onClick={() => completeMutation.mutate(selectedEvent.resource.id)}
+                    disabled={completeMutation.isPending || noShowMutation.isPending}
+                  >
+                    {completeMutation.isPending ? t('common.loading') : t('appointments.completeAppointment')}
+                  </Button>
+                )}
+              {selectedEvent.resource.status === 'confirmed' &&
+                canCompleteAptCalendar(selectedEvent.resource) && (
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<PersonOffIcon />}
+                    onClick={() => noShowMutation.mutate(selectedEvent.resource.id)}
+                    disabled={completeMutation.isPending || noShowMutation.isPending}
+                  >
+                    {noShowMutation.isPending ? t('common.loading') : t('appointments.noShowButton')}
+                  </Button>
+                )}
+              {selectedEvent.resource.status !== 'cancelled' &&
+                selectedEvent.resource.status !== 'completed' &&
+                selectedEvent.resource.status !== 'no_show' &&
+                canCancelAptCalendar(selectedEvent.resource) && (
+                  <Button
+                    color="error"
+                    startIcon={<DeleteOutlineIcon />}
+                    onClick={() => {
+                      if (window.confirm(t('appointments.confirmCancelBody'))) {
+                        cancelMutation.mutate(selectedEvent.resource.id)
+                      }
+                    }}
+                    disabled={cancelMutation.isPending}
+                  >
+                    {t('appointments.cancelAppointment')}
+                  </Button>
+                )}
+            </>
+          )}
         </DialogActions>
       </Dialog>
+
+      <VisitorPhotoZoomDialog
+        open={visitorPhotoZoomOpen}
+        onClose={() => setVisitorPhotoZoomOpen(false)}
+        imageUrl={visitorPhotoUrl}
+        visitorName={
+          selectedEvent?.eventType === 'appointment'
+            ? selectedEvent.resource?.visitor_name
+            : undefined
+        }
+      />
     </>
   )
 }

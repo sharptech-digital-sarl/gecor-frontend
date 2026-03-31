@@ -217,6 +217,9 @@
     "visitorPhotoHint": "Facultatif — JPEG, PNG ou WebP, max 5 Mo.",
     "visitorPhotoInvalidType": "Veuillez choisir un fichier image.",
     "visitorPhotoTooLarge": "L'image doit faire au plus 5 Mo.",
+    "visitorPhotoZoomTitle": "Photo du visiteur",
+    "visitorPhotoZoomHint": "Utilisez le curseur pour agrandir, ou Ctrl + molette sur la zone d’image. Faites défiler pour voir les bords.",
+    "visitorPhotoZoomEnlarge": "Agrandir la photo",
     "pendingCancellationBadge": "Annulation en attente",
     "pendingCancellationNotice": "Une demande d'annulation est en attente de validation par un directeur.",
     "cancelAppointment": "Annuler le rendez-vous",
@@ -229,7 +232,17 @@
     "requestCancellationHint": "Un directeur examinera votre demande. Vous pouvez indiquer un motif (facultatif).",
     "requestCancellationReason": "Motif (facultatif)",
     "cancellationRequestSent": "Demande d'annulation envoyée.",
-    "cancellationRequestFailed": "Impossible d'envoyer la demande d'annulation."
+    "cancellationRequestFailed": "Impossible d'envoyer la demande d'annulation.",
+    "confirmAppointment": "Confirmer",
+    "completeAppointment": "Terminer",
+    "confirmSuccess": "Rendez-vous confirmé.",
+    "confirmFailed": "Impossible de confirmer le rendez-vous.",
+    "completeSuccess": "Rendez-vous marqué comme terminé.",
+    "completeFailed": "Impossible de terminer le rendez-vous.",
+    "noShowButton": "Absent (no show)",
+    "noShowSuccess": "Rendez-vous enregistré comme absent (no show).",
+    "noShowFailed": "Impossible d’enregistrer l’absence du visiteur.",
+    "checkInDetailLabel": "Confirmer"
   },
   "deletionRequests": {
     "title": "Demandes de suppression",

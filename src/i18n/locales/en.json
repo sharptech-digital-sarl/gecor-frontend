@@ -217,6 +217,9 @@
     "visitorPhotoHint": "Optional — JPEG, PNG or WebP, max 5 MB.",
     "visitorPhotoInvalidType": "Please choose an image file.",
     "visitorPhotoTooLarge": "Image must be 5 MB or smaller.",
+    "visitorPhotoZoomTitle": "Visitor photo",
+    "visitorPhotoZoomHint": "Use the slider to zoom, or Ctrl + scroll wheel over the image. Scroll to pan when zoomed in.",
+    "visitorPhotoZoomEnlarge": "Enlarge photo",
     "pendingCancellationBadge": "Cancellation pending",
     "pendingCancellationNotice": "A cancellation request is awaiting director approval.",
     "cancelAppointment": "Cancel appointment",
@@ -229,7 +232,17 @@
     "requestCancellationHint": "A director will review your request. You can add an optional reason below.",
     "requestCancellationReason": "Reason (optional)",
     "cancellationRequestSent": "Cancellation request submitted.",
-    "cancellationRequestFailed": "Could not submit the cancellation request."
+    "cancellationRequestFailed": "Could not submit the cancellation request.",
+    "confirmAppointment": "Confirm",
+    "completeAppointment": "Mark as completed",
+    "confirmSuccess": "Appointment confirmed.",
+    "confirmFailed": "Could not confirm the appointment.",
+    "completeSuccess": "Appointment marked as completed.",
+    "completeFailed": "Could not complete the appointment.",
+    "noShowButton": "No-show (visitor absent)",
+    "noShowSuccess": "Appointment recorded as no-show.",
+    "noShowFailed": "Could not record the no-show.",
+    "checkInDetailLabel": "Confirm"
   },
   "deletionRequests": {
     "title": "Deletion requests",

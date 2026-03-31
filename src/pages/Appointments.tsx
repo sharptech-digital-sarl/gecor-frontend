@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
@@ -20,6 +20,9 @@ import {
   DialogActions,
   TableSortLabel,
   TextField,
+  Avatar,
+  Tooltip,
+  IconButton,
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -27,6 +30,10 @@ import {
   Visibility as ViewIcon,
   DeleteOutline as DeleteOutlineIcon,
   EventBusy as EventBusyIcon,
+  ZoomIn as ZoomInIcon,
+  HowToReg as HowToRegIcon,
+  TaskAlt as TaskAltIcon,
+  PersonOff as PersonOffIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
@@ -35,10 +42,12 @@ import { useTableSort } from '../hooks/useTableSort'
 import { isSameLocalDay } from '../utils/dateCompare'
 import api from '../services/api'
 import CreateAppointmentDialog from '../components/appointments/CreateAppointmentDialog'
+import VisitorPhotoZoomDialog from '../components/appointments/VisitorPhotoZoomDialog'
 import { hasPermission } from '../utils/permissions'
 
 type AptRow = {
   id: string
+  organizer_id?: string
   title?: string
   description?: string
   start_time: string
@@ -49,7 +58,7 @@ type AptRow = {
   visitor_company?: string
   status?: string
   organizer?: { full_name?: string; role?: string }
-  visitor?: { checked_in?: boolean }
+  visitor?: { checked_in?: boolean; visitor_photo_path?: string | null }
   has_pending_deletion_request?: boolean
 }
 
@@ -67,6 +76,10 @@ export default function Appointments() {
   const [requestCancelOpen, setRequestCancelOpen] = useState(false)
   const [requestCancelReason, setRequestCancelReason] = useState('')
   const [actionMessage, setActionMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const [visitorPhotoUrl, setVisitorPhotoUrl] = useState<string | null>(null)
+  const [visitorPhotoLoading, setVisitorPhotoLoading] = useState(false)
+  const [visitorPhotoZoomOpen, setVisitorPhotoZoomOpen] = useState(false)
+  const visitorPhotoBlobRef = useRef<string | null>(null)
   const { sortBy, sortDir, toggleSort, sortRows } = useTableSort<SortKey>('start_time', 'desc')
 
   const canCreate = hasPermission(user, 'appointments.create')
@@ -94,9 +107,71 @@ export default function Appointments() {
     },
   })
 
+  const confirmMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/confirm`)
+      return response.data as AptRow
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setSelectedAppointment(data)
+      setActionMessage({ type: 'success', text: t('appointments.confirmSuccess') })
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.confirmFailed'),
+      })
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/complete`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setViewOpen(false)
+      setSelectedAppointment(null)
+      setActionMessage({ type: 'success', text: t('appointments.completeSuccess') })
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.completeFailed'),
+      })
+    },
+  })
+
+  const noShowMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await api.post(`/appointments/${appointmentId}/no-show`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setViewOpen(false)
+      setSelectedAppointment(null)
+      setActionMessage({ type: 'success', text: t('appointments.noShowSuccess') })
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.noShowFailed'),
+      })
+    },
+  })
+
   const cancelMutation = useMutation({
     mutationFn: async (appointmentId: string) => {
-      const response = await api.delete(`/appointments/${appointmentId}`)
+      const response = await api.post(`/appointments/${appointmentId}/cancel`)
       return response.data
     },
     onSuccess: () => {
@@ -179,6 +254,74 @@ export default function Appointments() {
 
   const receptionStatus = (apt: AptRow) =>
     apt.visitor?.checked_in ? t('reception.checkedIn') : t('reception.pending')
+
+  const isVisitHost = (apt: AptRow) =>
+    user?.id != null &&
+    apt.organizer_id != null &&
+    String(user.id) === String(apt.organizer_id)
+
+  const canConfirmAppointment = (apt: AptRow) =>
+    isVisitHost(apt) || user?.role === 'master'
+
+  const canCompleteAppointment = (apt: AptRow) =>
+    isVisitHost(apt) || user?.role === 'master' || canDeleteApt
+
+  const canCancelAppointmentDirect = (apt: AptRow) =>
+    isVisitHost(apt) || canDeleteApt
+
+  useEffect(() => {
+    const revokeCurrent = () => {
+      if (visitorPhotoBlobRef.current) {
+        URL.revokeObjectURL(visitorPhotoBlobRef.current)
+        visitorPhotoBlobRef.current = null
+      }
+      setVisitorPhotoUrl(null)
+    }
+
+    if (!viewOpen || !selectedAppointment?.id) {
+      revokeCurrent()
+      setVisitorPhotoLoading(false)
+      return undefined
+    }
+    if (!selectedAppointment.visitor?.visitor_photo_path) {
+      revokeCurrent()
+      setVisitorPhotoLoading(false)
+      return undefined
+    }
+    let alive = true
+    revokeCurrent()
+    setVisitorPhotoLoading(true)
+    ;(async () => {
+      try {
+        const res = await api.get(`/appointments/${selectedAppointment.id}/visitor/photo`, {
+          responseType: 'blob',
+        })
+        if (!alive) return
+        const url = URL.createObjectURL(res.data)
+        if (!alive) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        visitorPhotoBlobRef.current = url
+        setVisitorPhotoUrl(url)
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          console.warn('[Appointments] GET visitor/photo failed', e)
+        }
+        if (alive) revokeCurrent()
+      } finally {
+        if (alive) setVisitorPhotoLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+      revokeCurrent()
+    }
+  }, [viewOpen, selectedAppointment?.id, selectedAppointment?.visitor?.visitor_photo_path])
+
+  useEffect(() => {
+    if (!viewOpen) setVisitorPhotoZoomOpen(false)
+  }, [viewOpen])
 
   return (
     <Box>
@@ -379,7 +522,107 @@ export default function Appointments() {
         <DialogTitle>{t('reception.appointmentDetails')}</DialogTitle>
         <DialogContent>
           {selectedAppointment && (
-            <Box sx={{ mt: 1 }}>
+            <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+              <Box sx={{ flexShrink: 0 }}>
+                <Tooltip
+                  title={
+                    visitorPhotoUrl && !visitorPhotoLoading
+                      ? t('appointments.visitorPhotoZoomEnlarge')
+                      : ''
+                  }
+                  disableHoverListener={!visitorPhotoUrl || visitorPhotoLoading}
+                >
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      width: 96,
+                      height: 96,
+                      cursor:
+                        visitorPhotoUrl && !visitorPhotoLoading ? 'zoom-in' : 'default',
+                    }}
+                    onClick={() => {
+                      if (visitorPhotoUrl && !visitorPhotoLoading) {
+                        setVisitorPhotoZoomOpen(true)
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        (e.key === 'Enter' || e.key === ' ') &&
+                        visitorPhotoUrl &&
+                        !visitorPhotoLoading
+                      ) {
+                        e.preventDefault()
+                        setVisitorPhotoZoomOpen(true)
+                      }
+                    }}
+                    role={visitorPhotoUrl && !visitorPhotoLoading ? 'button' : undefined}
+                    tabIndex={visitorPhotoUrl && !visitorPhotoLoading ? 0 : undefined}
+                  >
+                    <Avatar
+                      src={visitorPhotoUrl || undefined}
+                      alt={selectedAppointment.visitor_name || ''}
+                      imgProps={{
+                        onError: () => {
+                          if (visitorPhotoBlobRef.current) {
+                            URL.revokeObjectURL(visitorPhotoBlobRef.current)
+                            visitorPhotoBlobRef.current = null
+                          }
+                          setVisitorPhotoUrl(null)
+                        },
+                      }}
+                      sx={{
+                        width: 96,
+                        height: 96,
+                        bgcolor: 'primary.main',
+                        fontSize: '2rem',
+                      }}
+                    >
+                      {(selectedAppointment.visitor_name || selectedAppointment.title || '?')
+                        .toString()
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Avatar>
+                    {visitorPhotoUrl && !visitorPhotoLoading && (
+                      <IconButton
+                        size="small"
+                        aria-label={t('appointments.visitorPhotoZoomEnlarge')}
+                        sx={{
+                          position: 'absolute',
+                          bottom: -6,
+                          right: -6,
+                          bgcolor: 'background.paper',
+                          boxShadow: 2,
+                          '&:hover': { bgcolor: 'background.paper' },
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setVisitorPhotoZoomOpen(true)
+                        }}
+                      >
+                        <ZoomInIcon fontSize="small" color="primary" />
+                      </IconButton>
+                    )}
+                    {visitorPhotoLoading && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: '50%',
+                          bgcolor: 'action.hover',
+                          opacity: 0.85,
+                        }}
+                      >
+                        <CircularProgress size={28} />
+                      </Box>
+                    )}
+                  </Box>
+                </Tooltip>
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h6" gutterBottom>
                 {selectedAppointment.title || '—'}
               </Typography>
@@ -428,14 +671,56 @@ export default function Appointments() {
                   {t('appointments.pendingCancellationNotice')}
                 </Alert>
               )}
+              </Box>
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Button onClick={() => setViewOpen(false)}>{t('common.close')}</Button>
           {selectedAppointment &&
+            selectedAppointment.status === 'pending' &&
+            canConfirmAppointment(selectedAppointment) && (
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<HowToRegIcon />}
+                onClick={() => confirmMutation.mutate(selectedAppointment.id)}
+                disabled={confirmMutation.isPending}
+              >
+                {confirmMutation.isPending ? t('common.loading') : t('appointments.confirmAppointment')}
+              </Button>
+            )}
+          {selectedAppointment &&
+            selectedAppointment.status === 'confirmed' &&
+            canCompleteAppointment(selectedAppointment) && (
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<TaskAltIcon />}
+                onClick={() => completeMutation.mutate(selectedAppointment.id)}
+                disabled={completeMutation.isPending || noShowMutation.isPending}
+              >
+                {completeMutation.isPending ? t('common.loading') : t('appointments.completeAppointment')}
+              </Button>
+            )}
+          {selectedAppointment &&
+            selectedAppointment.status === 'confirmed' &&
+            canCompleteAppointment(selectedAppointment) && (
+              <Button
+                variant="outlined"
+                color="warning"
+                startIcon={<PersonOffIcon />}
+                onClick={() => noShowMutation.mutate(selectedAppointment.id)}
+                disabled={completeMutation.isPending || noShowMutation.isPending}
+              >
+                {noShowMutation.isPending ? t('common.loading') : t('appointments.noShowButton')}
+              </Button>
+            )}
+          {selectedAppointment &&
             selectedAppointment.status !== 'cancelled' &&
-            canDeleteApt && (
+            selectedAppointment.status !== 'completed' &&
+            selectedAppointment.status !== 'no_show' &&
+            canCancelAppointmentDirect(selectedAppointment) && (
               <Button
                 color="error"
                 startIcon={<DeleteOutlineIcon />}
@@ -446,8 +731,11 @@ export default function Appointments() {
             )}
           {selectedAppointment &&
             selectedAppointment.status !== 'cancelled' &&
+            selectedAppointment.status !== 'completed' &&
+            selectedAppointment.status !== 'no_show' &&
             canRequestCancel &&
-            !selectedAppointment.has_pending_deletion_request && (
+            !selectedAppointment.has_pending_deletion_request &&
+            !canCancelAppointmentDirect(selectedAppointment) && (
               <Button
                 color="warning"
                 variant="outlined"
@@ -470,11 +758,18 @@ export default function Appointments() {
                 }}
                 disabled={checkInMutation.isPending}
               >
-                {t('reception.checkIn')}
+                {t('appointments.checkInDetailLabel')}
               </Button>
             )}
         </DialogActions>
       </Dialog>
+
+      <VisitorPhotoZoomDialog
+        open={visitorPhotoZoomOpen}
+        onClose={() => setVisitorPhotoZoomOpen(false)}
+        imageUrl={visitorPhotoUrl}
+        visitorName={selectedAppointment?.visitor_name}
+      />
 
       <Dialog open={cancelConfirmOpen} onClose={() => !cancelMutation.isPending && setCancelConfirmOpen(false)}>
         <DialogTitle>{t('appointments.confirmCancelTitle')}</DialogTitle>
