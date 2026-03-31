@@ -13,29 +13,51 @@ import {
   Tab,
   CircularProgress,
   Alert,
+  TextField,
 } from '@mui/material'
 import SignaturePad from './SignaturePad'
 import ImageViewer from './ImageViewer'
 import api from '../../services/api'
+import { useAuth } from '../../hooks/useAuth'
+import { hasPermission } from '../../utils/permissions'
 
 interface DocumentViewerProps {
   open: boolean
   document: any
   onClose: () => void
+  /** Refresh list after delete or deletion request */
+  onMailChanged?: () => void
 }
 
 export default function DocumentViewer({
   open,
   document,
   onClose,
+  onMailChanged,
 }: DocumentViewerProps) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const [tab, setTab] = useState(0)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(false)
+  const [requestReason, setRequestReason] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [fileType, setFileType] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const blobUrlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setDeleteConfirmOpen(false)
+      setRequestOpen(false)
+      setRequestReason('')
+      setActionError(null)
+      setActionLoading(false)
+    }
+  }, [open])
 
   useEffect(() => {
     // Cleanup previous blob URL when document or tab changes
@@ -146,6 +168,47 @@ export default function DocumentViewer({
 
   if (!document) return null
 
+  const canDelete = hasPermission(user, 'mail.delete')
+  const canRequestDelete =
+    hasPermission(user, 'mail.request_delete') && !document.has_pending_deletion_request
+
+  const handleDirectDelete = async () => {
+    setActionError(null)
+    setActionLoading(true)
+    try {
+      await api.delete(`/mail/${document.id}`)
+      setDeleteConfirmOpen(false)
+      onMailChanged?.()
+      onClose()
+    } catch (err: any) {
+      setActionError(
+        err.response?.data?.detail || err.message || t('mail.viewer.deleteFailed')
+      )
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleSubmitDeletionRequest = async () => {
+    setActionError(null)
+    setActionLoading(true)
+    try {
+      await api.post(`/mail/${document.id}/deletion-request`, {
+        reason: requestReason.trim() || null,
+      })
+      setRequestOpen(false)
+      setRequestReason('')
+      onMailChanged?.()
+      onClose()
+    } catch (err: any) {
+      setActionError(
+        err.response?.data?.detail || err.message || t('mail.viewer.requestDeleteFailed')
+      )
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const getStatusLabel = (status: string) => {
     const statusMap: any = {
       received: t('mail.statusReceived'),
@@ -173,8 +236,16 @@ export default function DocumentViewer({
       <DialogContent>
         <Box sx={{ mb: 2 }}>
           <Chip label={getStatusLabel(document.status)} sx={{ mr: 1 }} />
-          <Chip label={getPriorityLabel(document.priority)} color="secondary" />
+          <Chip label={getPriorityLabel(document.priority)} color="secondary" sx={{ mr: 1 }} />
+          {document.has_pending_deletion_request && (
+            <Chip label={t('mail.viewer.pendingDeletionRequest')} color="warning" size="small" />
+          )}
         </Box>
+        {actionError && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+            {actionError}
+          </Alert>
+        )}
 
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
           <Tab label={t('mail.viewer.details')} />
@@ -310,9 +381,60 @@ export default function DocumentViewer({
 
         {tab === 2 && <SignaturePad documentId={document.id} />}
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+        {canDelete && (
+          <Button color="error" onClick={() => setDeleteConfirmOpen(true)}>
+            {t('common.delete')}
+          </Button>
+        )}
+        {canRequestDelete && (
+          <Button color="warning" variant="outlined" onClick={() => setRequestOpen(true)}>
+            {t('mail.viewer.requestDeletion')}
+          </Button>
+        )}
         <Button onClick={onClose}>{t('common.close')}</Button>
       </DialogActions>
+
+      <Dialog open={deleteConfirmOpen} onClose={() => !actionLoading && setDeleteConfirmOpen(false)}>
+        <DialogTitle>{t('mail.viewer.confirmDeleteTitle')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{t('mail.viewer.confirmDeleteBody')}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)} disabled={actionLoading}>
+            {t('common.cancel')}
+          </Button>
+          <Button color="error" variant="contained" onClick={handleDirectDelete} disabled={actionLoading}>
+            {t('common.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={requestOpen} onClose={() => !actionLoading && setRequestOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('mail.viewer.requestDeletionTitle')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            {t('mail.viewer.requestDeletionHint')}
+          </Typography>
+          <TextField
+            label={t('mail.viewer.requestDeletionReason')}
+            value={requestReason}
+            onChange={(e) => setRequestReason(e.target.value)}
+            fullWidth
+            multiline
+            minRows={2}
+            disabled={actionLoading}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRequestOpen(false)} disabled={actionLoading}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="contained" onClick={handleSubmitDeletionRequest} disabled={actionLoading}>
+            {t('common.submit')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   )
 }
