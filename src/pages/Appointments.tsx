@@ -23,7 +23,11 @@ import {
   Avatar,
   Tooltip,
   IconButton,
+  Snackbar,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material'
+import { useTheme, alpha } from '@mui/material/styles'
 import {
   Add as AddIcon,
   CheckCircle as CheckIcon,
@@ -45,6 +49,24 @@ import api from '../services/api'
 import CreateAppointmentDialog from '../components/appointments/CreateAppointmentDialog'
 import VisitorPhotoZoomDialog from '../components/appointments/VisitorPhotoZoomDialog'
 import { hasPermission } from '../utils/permissions'
+import { Html5Qrcode } from 'html5-qrcode'
+import {
+  computeCheckInPunctualityFromTimes,
+  punctualityToastMessage,
+  type CheckInPunctualityApiPayload,
+} from '../utils/checkInPunctuality'
+import {
+  axiosErrorDetail,
+  translateKnownAppointmentApiDetail,
+} from '../utils/translateKnownApiDetail'
+import {
+  ModalSectionHeader,
+  ModalSectionBody,
+  modalDialogFooterSx,
+} from '../components/common/DetailModalLayout'
+
+/** ID du conteneur pour html5-qrcode (scan QR cross-navigateur, pas seulement Chrome). */
+const APPOINTMENTS_QR_READER_ID = 'appointments-qr-reader'
 
 type AptRow = {
   id: string
@@ -59,8 +81,17 @@ type AptRow = {
   visitor_company?: string
   status?: string
   organizer?: { full_name?: string; role?: string }
-  visitor?: { checked_in?: boolean; visitor_photo_path?: string | null }
+  visitor?: {
+    checked_in?: boolean
+    checked_in_at?: string | null
+    visitor_photo_path?: string | null
+    visitor_id_document_path?: string | null
+  }
   has_pending_deletion_request?: boolean
+  booking_source?: string
+  internal_notes?: string | null
+  reception_validated_at?: string | null
+  visitor_booking_email_sent_at?: string | null
 }
 
 type SortKey = 'start_time' | 'visitor_name' | 'visitor_company' | 'organizer' | 'status'
@@ -80,14 +111,51 @@ export default function Appointments() {
   const [visitorPhotoUrl, setVisitorPhotoUrl] = useState<string | null>(null)
   const [visitorPhotoLoading, setVisitorPhotoLoading] = useState(false)
   const [visitorPhotoZoomOpen, setVisitorPhotoZoomOpen] = useState(false)
+  const [visitorIdDocUrl, setVisitorIdDocUrl] = useState<string | null>(null)
+  const [visitorIdDocLoading, setVisitorIdDocLoading] = useState(false)
+  const [visitorIdDocZoomOpen, setVisitorIdDocZoomOpen] = useState(false)
+  const visitorIdDocBlobRef = useRef<string | null>(null)
   const [qrPayload, setQrPayload] = useState('')
   const [qrScanError, setQrScanError] = useState('')
   const [isQrScanning, setIsQrScanning] = useState(false)
   const visitorPhotoBlobRef = useRef<string | null>(null)
-  const qrVideoRef = useRef<HTMLVideoElement | null>(null)
-  const qrStreamRef = useRef<MediaStream | null>(null)
-  const qrTimerRef = useRef<number | null>(null)
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
+  /** Évite les doubles appels si la lib déclenche plusieurs fois le même décodage. */
+  const qrDecodeLockRef = useRef(false)
   const { sortBy, sortDir, toggleSort, sortRows } = useTableSort<SortKey>('start_time', 'desc')
+  const theme = useTheme()
+  const [checkInToast, setCheckInToast] = useState<{
+    open: boolean
+    message: string
+    severity: 'success' | 'info' | 'error'
+  }>({ open: false, message: '', severity: 'success' })
+  const [internalNotesDraft, setInternalNotesDraft] = useState('')
+  const [finalizeForceResend, setFinalizeForceResend] = useState(false)
+
+  const showCheckInPunctualityToast = (data: CheckInPunctualityApiPayload) => {
+    const message = punctualityToastMessage(t, data)
+    const severity =
+      data.punctuality_status === 'late'
+        ? 'error'
+        : data.punctuality_status === 'early'
+          ? 'info'
+          : 'success'
+    setCheckInToast({ open: true, message, severity })
+  }
+
+  const checkInRowSx = (apt: AptRow) => {
+    if (!apt.visitor?.checked_in || !apt.visitor?.checked_in_at) return undefined
+    const { status } = computeCheckInPunctualityFromTimes(apt.start_time, apt.visitor.checked_in_at)
+    const bg =
+      status === 'early'
+        ? alpha(theme.palette.info.main, 0.14)
+        : status === 'on_time'
+          ? alpha(theme.palette.success.main, 0.14)
+          : alpha(theme.palette.error.main, 0.14)
+    return { bgcolor: bg }
+  }
+
+  const canUpdateApt = hasPermission(user, 'appointments.update')
 
   const canCreate = hasPermission(user, 'appointments.create')
   const canCheckIn = hasPermission(user, 'reception.checkin')
@@ -105,31 +173,54 @@ export default function Appointments() {
   const checkInMutation = useMutation({
     mutationFn: async (appointmentId: string) => {
       const response = await api.post(`/appointments/${appointmentId}/check-in`)
-      return response.data
+      return response.data as CheckInPunctualityApiPayload
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
       queryClient.invalidateQueries({ queryKey: ['appointments'] })
       queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      showCheckInPunctualityToast(data)
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      const translated = translateKnownAppointmentApiDetail(t, detail)
+      const fallback =
+        typeof detail === 'string'
+          ? detail
+          : err instanceof Error
+            ? err.message
+            : ''
+      setActionMessage({
+        type: 'error',
+        text: (translated ?? fallback) || t('appointments.checkInFailed'),
+      })
     },
   })
 
   const checkInByQrMutation = useMutation({
     mutationFn: async (raw: string) => {
       const response = await api.post('/appointments/check-in-by-qr', { raw })
-      return response.data
+      return response.data as CheckInPunctualityApiPayload
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
       queryClient.invalidateQueries({ queryKey: ['appointments'] })
       queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
       setQrPayload('')
-      setActionMessage({ type: 'success', text: t('appointments.qrCheckInSuccess') })
+      showCheckInPunctualityToast(data)
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      const translated = translateKnownAppointmentApiDetail(t, detail)
+      const fallback =
+        typeof detail === 'string'
+          ? detail
+          : err instanceof Error
+            ? err.message
+            : ''
       setActionMessage({
         type: 'error',
-        text: err.response?.data?.detail || err.message || t('appointments.qrCheckInFailed'),
+        text: (translated ?? fallback) || t('appointments.qrCheckInFailed'),
       })
     },
   })
@@ -218,6 +309,62 @@ export default function Appointments() {
     },
   })
 
+  const saveInternalNotesMutation = useMutation({
+    mutationFn: async ({ id, internal_notes }: { id: string; internal_notes: string }) => {
+      await api.put(`/appointments/${id}`, { internal_notes })
+    },
+    onSuccess: (_, v) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setActionMessage({ type: 'success', text: t('appointments.internalNotesSaved') })
+      setSelectedAppointment((prev) =>
+        prev && prev.id === v.id ? { ...prev, internal_notes: v.internal_notes } : prev
+      )
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.internalNotesFailed'),
+      })
+    },
+  })
+
+  const finalizeReceptionMutation = useMutation({
+    mutationFn: async ({
+      id,
+      internal_notes,
+      force_resend_visitor_email,
+    }: {
+      id: string
+      internal_notes: string
+      force_resend_visitor_email: boolean
+    }) => {
+      const { data } = await api.post(`/appointments/${id}/reception-finalize`, {
+        internal_notes: internal_notes || null,
+        send_visitor_email: true,
+        force_resend_visitor_email: force_resend_visitor_email,
+      })
+      return data
+    },
+    onSuccess: (data: AptRow) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      setActionMessage({ type: 'success', text: t('appointments.finalizeSuccess') })
+      const id = data?.id
+      if (id) {
+        setSelectedAppointment((prev) => (prev && prev.id === id ? { ...prev, ...data } : prev))
+      }
+    },
+    onError: (err: any) => {
+      setActionMessage({
+        type: 'error',
+        text: err.response?.data?.detail || err.message || t('appointments.finalizeFailed'),
+      })
+    },
+  })
+
   const requestCancelMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
       const response = await api.post(`/appointments/${id}/deletion-request`, {
@@ -242,6 +389,13 @@ export default function Appointments() {
       })
     },
   })
+
+  useEffect(() => {
+    if (selectedAppointment) {
+      setInternalNotesDraft(selectedAppointment.internal_notes ?? '')
+      setFinalizeForceResend(false)
+    }
+  }, [selectedAppointment?.id, selectedAppointment?.internal_notes, viewOpen])
 
   const sorted = appointments
     ? sortRows(appointments, (row, key) => {
@@ -347,63 +501,143 @@ export default function Appointments() {
   }, [viewOpen, selectedAppointment?.id, selectedAppointment?.visitor?.visitor_photo_path])
 
   useEffect(() => {
-    if (!viewOpen) setVisitorPhotoZoomOpen(false)
+    const revokeCurrent = () => {
+      if (visitorIdDocBlobRef.current) {
+        URL.revokeObjectURL(visitorIdDocBlobRef.current)
+        visitorIdDocBlobRef.current = null
+      }
+      setVisitorIdDocUrl(null)
+    }
+
+    if (!viewOpen || !selectedAppointment?.id) {
+      revokeCurrent()
+      setVisitorIdDocLoading(false)
+      return undefined
+    }
+    if (!selectedAppointment.visitor?.visitor_id_document_path) {
+      revokeCurrent()
+      setVisitorIdDocLoading(false)
+      return undefined
+    }
+    let alive = true
+    revokeCurrent()
+    setVisitorIdDocLoading(true)
+    ;(async () => {
+      try {
+        const res = await api.get(`/appointments/${selectedAppointment.id}/visitor/id-document`, {
+          responseType: 'blob',
+        })
+        if (!alive) return
+        const url = URL.createObjectURL(res.data)
+        if (!alive) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        visitorIdDocBlobRef.current = url
+        setVisitorIdDocUrl(url)
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          console.warn('[Appointments] GET visitor/id-document failed', e)
+        }
+        if (alive) revokeCurrent()
+      } finally {
+        if (alive) setVisitorIdDocLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+      revokeCurrent()
+    }
+  }, [viewOpen, selectedAppointment?.id, selectedAppointment?.visitor?.visitor_id_document_path])
+
+  useEffect(() => {
+    if (!viewOpen) {
+      setVisitorPhotoZoomOpen(false)
+      setVisitorIdDocZoomOpen(false)
+    }
   }, [viewOpen])
 
-  const stopQrScan = () => {
+  const stopQrScan = async () => {
+    const scanner = html5QrCodeRef.current
+    html5QrCodeRef.current = null
+    if (scanner) {
+      try {
+        await scanner.stop()
+      } catch {
+        // déjà arrêté ou pas démarré
+      }
+      try {
+        scanner.clear()
+      } catch {
+        // ignore
+      }
+    }
     setIsQrScanning(false)
-    if (qrTimerRef.current) {
-      window.clearInterval(qrTimerRef.current)
-      qrTimerRef.current = null
-    }
-    if (qrVideoRef.current) {
-      qrVideoRef.current.srcObject = null
-    }
-    if (qrStreamRef.current) {
-      qrStreamRef.current.getTracks().forEach((track) => track.stop())
-      qrStreamRef.current = null
-    }
   }
 
   const startQrScan = async () => {
     setQrScanError('')
-    const BarcodeDetectorCtor = (window as any).BarcodeDetector
-    if (!BarcodeDetectorCtor) {
-      setQrScanError(t('appointments.qrScannerUnsupported'))
-      return
+    qrDecodeLockRef.current = false
+    if (html5QrCodeRef.current) {
+      await stopQrScan()
     }
+    setIsQrScanning(true)
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false,
-      })
-      qrStreamRef.current = stream
-      if (qrVideoRef.current) {
-        qrVideoRef.current.srcObject = stream
-        await qrVideoRef.current.play()
-      }
-      const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] })
-      setIsQrScanning(true)
-      qrTimerRef.current = window.setInterval(async () => {
-        if (!qrVideoRef.current) return
-        try {
-          const codes = await detector.detect(qrVideoRef.current)
-          if (codes?.length && codes[0]?.rawValue) {
-            const rawValue = String(codes[0].rawValue)
-            setQrPayload(rawValue)
-            stopQrScan()
-          }
-        } catch {
-          // Ignore transient detector errors and keep scanning.
-        }
-      }, 600)
-    } catch (err: any) {
-      stopQrScan()
-      setQrScanError(err?.message || t('appointments.qrScannerStartFailed'))
+      const html5QrCode = new Html5Qrcode(APPOINTMENTS_QR_READER_ID)
+      html5QrCodeRef.current = html5QrCode
+      await html5QrCode.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          if (qrDecodeLockRef.current) return
+          const raw = decodedText.trim()
+          if (!raw) return
+          qrDecodeLockRef.current = true
+          setQrPayload(raw)
+          void (async () => {
+            try {
+              await stopQrScan()
+            } catch {
+              // ignore
+            }
+            checkInByQrMutation.mutate(raw, {
+              onSettled: () => {
+                qrDecodeLockRef.current = false
+              },
+            })
+          })()
+        },
+        () => undefined
+      )
+    } catch (err: unknown) {
+      html5QrCodeRef.current = null
+      const message = err instanceof Error ? err.message : String(err)
+      setQrScanError(message || t('appointments.qrScannerStartFailed'))
+      setIsQrScanning(false)
     }
   }
 
-  useEffect(() => () => stopQrScan(), [])
+  useEffect(() => {
+    return () => {
+      const scanner = html5QrCodeRef.current
+      html5QrCodeRef.current = null
+      if (scanner) {
+        scanner
+          .stop()
+          .then(() => scanner.clear())
+          .catch(() => {
+            try {
+              scanner.clear()
+            } catch {
+              // ignore
+            }
+          })
+      }
+    }
+  }, [])
 
   return (
     <Box>
@@ -422,7 +656,7 @@ export default function Appointments() {
             color="primary"
             startIcon={<AddIcon />}
             onClick={() => setCreateOpen(true)}
-            sx={{ minWidth: 180, background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)' }}
+            sx={{ minWidth: 180 }}
           >
             {t('appointments.newAppointment')}
           </Button>
@@ -469,21 +703,19 @@ export default function Appointments() {
               {t('appointments.qrCheckInAction')}
             </Button>
             {!isQrScanning ? (
-              <Button variant="outlined" startIcon={<QrCodeScannerIcon />} onClick={startQrScan}>
+              <Button variant="outlined" startIcon={<QrCodeScannerIcon />} onClick={() => void startQrScan()}>
                 {t('appointments.qrStartScan')}
               </Button>
             ) : (
-              <Button variant="outlined" color="warning" onClick={stopQrScan}>
+              <Button variant="outlined" color="warning" onClick={() => void stopQrScan()}>
                 {t('appointments.qrStopScan')}
               </Button>
             )}
           </Box>
           <Box sx={{ mt: 2, display: isQrScanning ? 'block' : 'none' }}>
-            <video
-              ref={qrVideoRef}
-              muted
-              playsInline
-              style={{ width: '100%', maxWidth: 460, borderRadius: 12, border: '1px solid #ddd' }}
+            <div
+              id={APPOINTMENTS_QR_READER_ID}
+              style={{ width: '100%', maxWidth: 460, minHeight: 200 }}
             />
           </Box>
         </Paper>
@@ -499,16 +731,19 @@ export default function Appointments() {
         component={Paper}
         sx={{
           borderRadius: 3,
-          overflow: 'hidden',
+          maxHeight: 'min(70vh, 720px)',
+          overflow: 'auto',
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
         }}
       >
-        <Table>
+        <Table stickyHeader>
           <TableHead>
             <TableRow
               sx={{
-                background: 'linear-gradient(135deg, rgba(0, 102, 204, 0.12) 0%, rgba(0, 166, 81, 0.12) 100%)',
-                '& .MuiTableCell-head': { fontWeight: 700 },
+                '& .MuiTableCell-head': {
+                  fontWeight: 700,
+                  bgcolor: 'grey.100',
+                },
               }}
             >
               <TableCell>
@@ -576,7 +811,7 @@ export default function Appointments() {
               sorted.map((apt) => {
                 const showCheckIn = isSameLocalDay(apt.start_time) && !apt.visitor?.checked_in
                 return (
-                  <TableRow key={apt.id} hover>
+                  <TableRow key={apt.id} hover sx={checkInRowSx(apt)}>
                     <TableCell>
                       <Typography variant="body2">
                         {formatTime(apt.start_time)} – {formatTime(apt.end_time)}
@@ -605,6 +840,9 @@ export default function Appointments() {
                         />
                         {apt.has_pending_deletion_request && (
                           <Chip label={t('appointments.pendingCancellationBadge')} size="small" color="warning" />
+                        )}
+                        {apt.booking_source === 'public' && (
+                          <Chip label={t('appointments.publicBookingBadge')} size="small" color="info" variant="outlined" />
                         )}
                       </Box>
                     </TableCell>
@@ -650,12 +888,63 @@ export default function Appointments() {
         />
       )}
 
-      <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{t('reception.appointmentDetails')}</DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={viewOpen}
+        onClose={() => setViewOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { overflow: 'hidden' } }}
+      >
+        {selectedAppointment && (
+          <ModalSectionHeader>
+            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              {t('reception.appointmentDetails')}
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+              {selectedAppointment.title || '—'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              {formatDateTime(selectedAppointment.start_time)} — {formatTime(selectedAppointment.end_time)}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
+              <Chip label={statusLabel(selectedAppointment.status)} size="small" variant="outlined" />
+              <Chip
+                label={
+                  selectedAppointment.visitor?.checked_in
+                    ? t('reception.checkedIn')
+                    : t('reception.pendingCheckIn')
+                }
+                color={selectedAppointment.visitor?.checked_in ? 'success' : 'default'}
+                size="small"
+              />
+              {selectedAppointment.has_pending_deletion_request && (
+                <Chip label={t('appointments.pendingCancellationBadge')} size="small" color="warning" />
+              )}
+              {selectedAppointment.booking_source === 'public' && (
+                <Chip label={t('appointments.publicBookingBadge')} size="small" color="info" variant="outlined" />
+              )}
+              {selectedAppointment.reception_validated_at && (
+                <Chip label={t('appointments.receptionValidatedBadge')} size="small" />
+              )}
+              {selectedAppointment.visitor_booking_email_sent_at && (
+                <Chip label={t('appointments.visitorEmailSentBadge')} size="small" color="success" variant="outlined" />
+              )}
+            </Box>
+          </ModalSectionHeader>
+        )}
+        <DialogContent sx={{ p: 0 }}>
           {selectedAppointment && (
-            <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-              <Box sx={{ flexShrink: 0 }}>
+            <ModalSectionBody sx={{ pt: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 2,
+                }}
+              >
                 <Tooltip
                   title={
                     visitorPhotoUrl && !visitorPhotoLoading
@@ -753,20 +1042,84 @@ export default function Appointments() {
                     )}
                   </Box>
                 </Tooltip>
+                {selectedAppointment.visitor?.visitor_id_document_path ? (
+                  <Box sx={{ textAlign: 'center', maxWidth: 120 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                      sx={{ mb: 0.5, fontWeight: 600 }}
+                    >
+                      {t('appointments.visitorIdDocumentLabel')}
+                    </Typography>
+                    <Tooltip
+                      title={
+                        visitorIdDocUrl && !visitorIdDocLoading
+                          ? t('appointments.visitorIdDocumentZoomEnlarge')
+                          : ''
+                      }
+                      disableHoverListener={!visitorIdDocUrl || visitorIdDocLoading}
+                    >
+                      <Box
+                        sx={{
+                          position: 'relative',
+                          width: 96,
+                          height: 96,
+                          borderRadius: 1,
+                          overflow: 'hidden',
+                          border: 1,
+                          borderColor: 'divider',
+                          cursor: visitorIdDocUrl && !visitorIdDocLoading ? 'zoom-in' : 'default',
+                          bgcolor: 'grey.100',
+                        }}
+                        onClick={() => {
+                          if (visitorIdDocUrl && !visitorIdDocLoading) setVisitorIdDocZoomOpen(true)
+                        }}
+                        onKeyDown={(e) => {
+                          if (
+                            (e.key === 'Enter' || e.key === ' ') &&
+                            visitorIdDocUrl &&
+                            !visitorIdDocLoading
+                          ) {
+                            e.preventDefault()
+                            setVisitorIdDocZoomOpen(true)
+                          }
+                        }}
+                        role={visitorIdDocUrl && !visitorIdDocLoading ? 'button' : undefined}
+                        tabIndex={visitorIdDocUrl && !visitorIdDocLoading ? 0 : undefined}
+                      >
+                        {visitorIdDocUrl && !visitorIdDocLoading ? (
+                          <Box
+                            component="img"
+                            src={visitorIdDocUrl}
+                            alt=""
+                            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : null}
+                        {visitorIdDocLoading && (
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <CircularProgress size={28} />
+                          </Box>
+                        )}
+                      </Box>
+                    </Tooltip>
+                  </Box>
+                ) : null}
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h6" gutterBottom>
-                {selectedAppointment.title || '—'}
-              </Typography>
               {selectedAppointment.description && (
                 <Typography variant="body2" color="text.secondary" paragraph>
                   {selectedAppointment.description}
                 </Typography>
               )}
-              <Typography variant="body2" paragraph>
-                <strong>{t('reception.time')}:</strong> {formatDateTime(selectedAppointment.start_time)} —{' '}
-                {formatTime(selectedAppointment.end_time)}
-              </Typography>
               <Typography variant="body2" paragraph>
                 <strong>{t('reception.visitorName')}:</strong> {selectedAppointment.visitor_name || '—'}
               </Typography>
@@ -795,19 +1148,87 @@ export default function Appointments() {
                   </>
                 )}
               </Typography>
-              <Typography variant="body2" paragraph>
-                <strong>{t('appointments.appointmentStatus')}:</strong> {statusLabel(selectedAppointment.status)}
-              </Typography>
               {selectedAppointment.has_pending_deletion_request && (
                 <Alert severity="warning" sx={{ mt: 1 }}>
                   {t('appointments.pendingCancellationNotice')}
                 </Alert>
               )}
+              {canUpdateApt && (
+                <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    {t('appointments.internalNotesLabel')}
+                  </Typography>
+                  <TextField
+                    value={internalNotesDraft}
+                    onChange={(e) => setInternalNotesDraft(e.target.value)}
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    size="small"
+                    disabled={saveInternalNotesMutation.isPending || finalizeReceptionMutation.isPending}
+                  />
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 1.5 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() =>
+                        selectedAppointment &&
+                        saveInternalNotesMutation.mutate({
+                          id: selectedAppointment.id,
+                          internal_notes: internalNotesDraft,
+                        })
+                      }
+                      disabled={
+                        saveInternalNotesMutation.isPending ||
+                        finalizeReceptionMutation.isPending ||
+                        !selectedAppointment
+                      }
+                    >
+                      {t('appointments.saveInternalNotes')}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="secondary"
+                      onClick={() =>
+                        selectedAppointment &&
+                        finalizeReceptionMutation.mutate({
+                          id: selectedAppointment.id,
+                          internal_notes: internalNotesDraft,
+                          force_resend_visitor_email: finalizeForceResend,
+                        })
+                      }
+                      disabled={
+                        finalizeReceptionMutation.isPending ||
+                        saveInternalNotesMutation.isPending ||
+                        !selectedAppointment
+                      }
+                    >
+                      {t('appointments.finalizeReception')}
+                    </Button>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={finalizeForceResend}
+                          onChange={(e) => setFinalizeForceResend(e.target.checked)}
+                          disabled={finalizeReceptionMutation.isPending}
+                        />
+                      }
+                      label={t('appointments.forceResendEmail')}
+                    />
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                    {t('appointments.finalizeReceptionHint')}
+                  </Typography>
+                </Box>
+              )}
               </Box>
             </Box>
+            </ModalSectionBody>
           )}
         </DialogContent>
-        <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+        <DialogActions sx={modalDialogFooterSx}>
           <Button onClick={() => setViewOpen(false)}>{t('common.close')}</Button>
           {selectedAppointment &&
             selectedAppointment.status === 'pending' &&
@@ -902,6 +1323,14 @@ export default function Appointments() {
         imageUrl={visitorPhotoUrl}
         visitorName={selectedAppointment?.visitor_name}
       />
+      <VisitorPhotoZoomDialog
+        open={visitorIdDocZoomOpen}
+        onClose={() => setVisitorIdDocZoomOpen(false)}
+        imageUrl={visitorIdDocUrl}
+        visitorName={selectedAppointment?.visitor_name}
+        title={t('appointments.visitorIdDocumentZoomTitle')}
+        hint={t('appointments.visitorIdDocumentZoomHint')}
+      />
 
       <Dialog open={cancelConfirmOpen} onClose={() => !cancelMutation.isPending && setCancelConfirmOpen(false)}>
         <DialogTitle>{t('appointments.confirmCancelTitle')}</DialogTitle>
@@ -963,6 +1392,25 @@ export default function Appointments() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={checkInToast.open}
+        autoHideDuration={6000}
+        onClose={(_, reason) => {
+          if (reason === 'clickaway') return
+          setCheckInToast((s) => ({ ...s, open: false }))
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={checkInToast.severity}
+          variant="filled"
+          onClose={() => setCheckInToast((s) => ({ ...s, open: false }))}
+          sx={{ width: '100%' }}
+        >
+          {checkInToast.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

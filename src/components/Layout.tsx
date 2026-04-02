@@ -29,6 +29,9 @@ import {
   Settings as SettingsIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
   Menu as MenuIcon,
+  History as HistoryIcon,
+  NotificationsActive as NotificationsActiveIcon,
+  Article as ArticleIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../hooks/useAuth'
@@ -36,6 +39,7 @@ import { isAdminUser } from '../utils/roles'
 import { hasPermission } from '../utils/permissions'
 import Settings from './Settings'
 import Logo from './Logo'
+import NotificationBell from './NotificationBell'
 
 const drawerWidth = 280
 const drawerWidthMini = 72
@@ -64,20 +68,35 @@ export default function Layout() {
   }, [])
 
   const menuItems = [
-    { text: t('navigation.dashboard'), icon: <DashboardIcon />, path: '/' },
-    { text: t('navigation.mailManagement'), icon: <MailIcon />, path: '/mail' },
-    { text: t('navigation.appointments'), icon: <CalendarIcon />, path: '/appointments' },
-    { text: t('navigation.reception'), icon: <PeopleIcon />, path: '/reception' },
+    { text: t('navigation.dashboard'), icon: <DashboardIcon />, path: '/app' },
+    { text: t('navigation.mailManagement'), icon: <MailIcon />, path: '/app/mail' },
+    { text: t('navigation.appointments'), icon: <CalendarIcon />, path: '/app/appointments' },
+    { text: t('navigation.reception'), icon: <PeopleIcon />, path: '/app/reception' },
     ...(hasPermission(user, 'deletion_requests.review')
-      ? [{ text: t('navigation.deletionRequests'), icon: <GavelIcon />, path: '/deletion-requests' }]
+      ? [{ text: t('navigation.deletionRequests'), icon: <GavelIcon />, path: '/app/deletion-requests' }]
       : []),
     ...(isAdminUser(user?.role)
-      ? [{ text: t('navigation.users'), icon: <GroupsIcon />, path: '/users' }]
+      ? [{ text: t('navigation.users'), icon: <GroupsIcon />, path: '/app/users' }]
+      : []),
+    ...(hasPermission(user, 'admin.audit')
+      ? [{ text: t('navigation.auditLog'), icon: <HistoryIcon />, path: '/app/admin/audit' }]
+      : []),
+    ...(hasPermission(user, 'admin.notifications')
+      ? [
+          {
+            text: t('navigation.systemNotifications'),
+            icon: <NotificationsActiveIcon />,
+            path: '/app/admin/notifications',
+          },
+        ]
+      : []),
+    ...(hasPermission(user, 'content.public_posts')
+      ? [{ text: t('navigation.publicPosts'), icon: <ArticleIcon />, path: '/app/admin/public-posts' }]
       : []),
   ]
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -97,20 +116,10 @@ export default function Layout() {
           ml: `${drawerCurrentWidth}px`,
           transition: drawerTransition,
           zIndex: (theme) => theme.zIndex.drawer + 1,
-          background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-          boxShadow: '0 8px 32px rgba(0, 102, 204, 0.3), 0 4px 16px rgba(0, 166, 81, 0.2)',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
-            animation: 'shimmer 3s infinite',
-            pointerEvents: 'none',
-          },
+          bgcolor: 'primary.dark',
+          boxShadow: '0 2px 8px rgba(13, 71, 161, 0.35)',
+          borderBottom: '1px solid',
+          borderColor: 'rgba(255,255,255,0.12)',
         }}
       >
         <Toolbar sx={{ justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
@@ -132,6 +141,7 @@ export default function Layout() {
             <Logo size="small" showText={true} variant="horizontal" />
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <NotificationBell />
             <Button
               id="user-menu-button"
               aria-controls={userMenuOpen ? 'user-menu' : undefined}
@@ -287,28 +297,24 @@ export default function Layout() {
                           left: 0,
                           top: 0,
                           bottom: 0,
-                          width: '4px',
-                          background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
+                          width: '3px',
+                          bgcolor: 'primary.main',
                           transform: isSelected ? 'scaleY(1)' : 'scaleY(0)',
-                          transition: 'transform 0.3s ease',
+                          transition: 'transform 0.2s ease',
                         },
                         '&.Mui-selected': {
-                          background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-                          color: 'white',
-                          boxShadow: '0 4px 12px rgba(0, 102, 204, 0.3)',
+                          bgcolor: 'rgba(21, 101, 192, 0.08)',
+                          color: 'primary.dark',
                           transform: sidebarExpanded ? `translateX(${shift})` : 'none',
                           '&:hover': {
-                            background: 'linear-gradient(135deg, #0052A3 0%, #008542 100%)',
-                            boxShadow: '0 6px 16px rgba(0, 102, 204, 0.4)',
-                            transform: sidebarExpanded ? `translateX(${shift}) scale(1.02)` : 'none',
+                            bgcolor: 'rgba(21, 101, 192, 0.12)',
                           },
                           '& .MuiListItemIcon-root': {
-                            color: 'white',
-                            transform: sidebarExpanded ? 'scale(1.1)' : 'none',
+                            color: 'primary.main',
                           },
                         },
                         '&:hover': {
-                          background: 'rgba(0, 102, 204, 0.08)',
+                          bgcolor: 'action.hover',
                           transform: sidebarExpanded ? `translateX(${shift})` : 'none',
                           '&::before': {
                             transform: 'scaleY(1)',
@@ -321,7 +327,7 @@ export default function Layout() {
                           minWidth: sidebarExpanded ? 40 : 0,
                           mr: sidebarExpanded ? 0 : 0,
                           justifyContent: 'center',
-                          color: isSelected ? 'white' : 'text.secondary',
+                          color: isSelected ? 'primary.main' : 'text.secondary',
                           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                         }}
                       >
@@ -351,7 +357,7 @@ export default function Layout() {
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          bgcolor: '#f5f7fa',
+          bgcolor: 'background.default',
           minHeight: '100vh',
           position: 'relative',
           overflow: 'auto',

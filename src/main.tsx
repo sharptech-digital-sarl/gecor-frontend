@@ -1,65 +1,58 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import CssBaseline from '@mui/material/CssBaseline'
 import './i18n/config'
 import './styles/global.css'
 import App from './App'
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-})
+import { queryClient } from './queryClient'
 
 const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#0066CC', // Bleu FPI principal
-      light: '#3385D6',
-      dark: '#0052A3',
+      main: '#1565c0',
+      light: '#42a5f5',
+      dark: '#0d47a1',
       contrastText: '#ffffff',
     },
     secondary: {
-      main: '#00A651', // Vert FPI
-      light: '#33B873',
-      dark: '#008542',
+      main: '#00838f',
+      light: '#4fb3bf',
+      dark: '#005662',
       contrastText: '#ffffff',
     },
     success: {
-      main: '#10b981',
-      light: '#34d399',
-      dark: '#059669',
+      main: '#2e7d32',
+      light: '#4caf50',
+      dark: '#1b5e20',
     },
     warning: {
-      main: '#f59e0b',
-      light: '#fbbf24',
-      dark: '#d97706',
+      main: '#ef6c00',
+      light: '#ff9800',
+      dark: '#e65100',
     },
     error: {
-      main: '#ef4444',
-      light: '#f87171',
-      dark: '#dc2626',
+      main: '#c62828',
+      light: '#ef5350',
+      dark: '#b71c1c',
     },
     info: {
-      main: '#0066CC',
-      light: '#3385D6',
-      dark: '#0052A3',
+      main: '#0277bd',
+      light: '#039be5',
+      dark: '#01579b',
     },
     background: {
-      default: '#f5f7fa',
+      default: '#e8eef5',
       paper: '#ffffff',
     },
     text: {
-      primary: '#1e293b',
-      secondary: '#64748b',
+      primary: '#1c2836',
+      secondary: '#546e7a',
     },
+    divider: 'rgba(21, 101, 192, 0.12)',
   },
   typography: {
     fontFamily: [
@@ -88,43 +81,25 @@ const theme = createTheme({
     },
   },
   shape: {
-    borderRadius: 12,
+    borderRadius: 8,
   },
   components: {
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          padding: '12px 28px',
+          borderRadius: 8,
+          padding: '10px 22px',
           boxShadow: 'none',
           fontWeight: 600,
           textTransform: 'none',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: '-100%',
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent)',
-            transition: 'left 0.5s',
-          },
+          transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
           '&:hover': {
-            transform: 'translateY(-2px)',
-            '&::before': {
-              left: '100%',
-            },
-          },
-          '&:active': {
-            transform: 'translateY(0)',
+            boxShadow: 'none',
           },
         },
         contained: {
           '&:hover': {
-            boxShadow: '0 8px 20px rgba(0, 102, 204, 0.4), 0 4px 10px rgba(0, 166, 81, 0.3)',
+            boxShadow: '0 4px 14px rgba(21, 101, 192, 0.28)',
           },
         },
       },
@@ -132,27 +107,12 @@ const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 20,
-          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06)',
-          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: '-100%',
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent)',
-            transition: 'left 0.5s',
-          },
+          borderRadius: 8,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
+          border: '1px solid rgba(0, 0, 0, 0.06)',
+          transition: 'box-shadow 0.2s ease',
           '&:hover': {
-            boxShadow: '0 20px 40px rgba(0, 102, 204, 0.2), 0 10px 20px rgba(0, 166, 81, 0.15)',
-            transform: 'translateY(-8px) scale(1.02)',
-            '&::before': {
-              left: '100%',
-            },
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
           },
         },
       },
@@ -183,6 +143,13 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 6,
+          fontWeight: 500,
+        },
+      },
+    },
+    MuiLink: {
+      styleOverrides: {
+        root: {
           fontWeight: 500,
         },
       },

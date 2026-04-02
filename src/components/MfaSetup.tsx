@@ -152,15 +152,10 @@ export default function MfaSetup() {
               </Typography>
               <Button
                 variant="contained"
+                color="primary"
                 startIcon={<SecurityIcon />}
                 onClick={handleSetup}
                 disabled={loading}
-                sx={{
-                  background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-                  '&:hover': {
-                    background: 'linear-gradient(135deg, #0052A3 0%, #008542 100%)',
-                  },
-                }}
               >
                 {loading ? <CircularProgress size={20} /> : t('mfa.setup')}
               </Button>
@@ -243,14 +238,9 @@ export default function MfaSetup() {
               <Stack direction="row" spacing={2}>
                 <Button
                   variant="contained"
+                  color="primary"
                   onClick={handleActivate}
                   disabled={loading || activationCode.length !== 6}
-                  sx={{
-                    background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #0052A3 0%, #008542 100%)',
-                    },
-                  }}
                 >
                   {loading ? <CircularProgress size={20} /> : t('mfa.activate')}
                 </Button>

@@ -20,6 +20,11 @@ import ImageViewer from './ImageViewer'
 import api from '../../services/api'
 import { useAuth } from '../../hooks/useAuth'
 import { hasPermission } from '../../utils/permissions'
+import {
+  ModalSectionHeader,
+  ModalSectionBody,
+  modalDialogFooterSx,
+} from '../common/DetailModalLayout'
 
 interface DocumentViewerProps {
   open: boolean
@@ -231,16 +236,27 @@ export default function DocumentViewer({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
-      <DialogTitle>{document.title}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mb: 2 }}>
-          <Chip label={getStatusLabel(document.status)} sx={{ mr: 1 }} />
-          <Chip label={getPriorityLabel(document.priority)} color="secondary" sx={{ mr: 1 }} />
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { overflow: 'hidden' } }}>
+      <ModalSectionHeader>
+        <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          {t('mail.viewDocument')}
+        </Typography>
+        <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>
+          {document.title}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {t('mail.viewer.reference')}: <strong>{document.reference_number}</strong>
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
+          <Chip label={getStatusLabel(document.status)} size="small" />
+          <Chip label={getPriorityLabel(document.priority)} color="secondary" size="small" />
           {document.has_pending_deletion_request && (
             <Chip label={t('mail.viewer.pendingDeletionRequest')} color="warning" size="small" />
           )}
         </Box>
+      </ModalSectionHeader>
+      <DialogContent sx={{ p: 0 }}>
+        <ModalSectionBody sx={{ pb: 0 }}>
         {actionError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
             {actionError}
@@ -380,8 +396,9 @@ export default function DocumentViewer({
         )}
 
         {tab === 2 && <SignaturePad documentId={document.id} />}
+        </ModalSectionBody>
       </DialogContent>
-      <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+      <DialogActions sx={modalDialogFooterSx}>
         {canDelete && (
           <Button color="error" onClick={() => setDeleteConfirmOpen(true)}>
             {t('common.delete')}

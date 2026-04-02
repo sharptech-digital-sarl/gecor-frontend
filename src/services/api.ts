@@ -48,6 +48,7 @@ if (import.meta.env.DEV) {
 
 const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -140,16 +141,23 @@ api.interceptors.response.use(
       const refreshToken = tokenService.getRefreshToken()
 
       if (!refreshToken) {
-        // No refresh token, logout user
-        tokenService.clearTokens()
         processQueue(error, null)
         isRefreshing = false
+        try {
+          await axios.post(`${API_URL}/auth/logout`, {}, {
+            withCredentials: true,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        } catch {
+          /* ignore */
+        }
+        tokenService.clearTokens()
         window.location.href = '/login'
         return Promise.reject(error)
       }
 
       try {
-        // Try to refresh the access token
+        // Try to refresh the access token (cookie httpOnly + corps si présent en localStorage)
         const response = await axios.post(
           `${API_URL}/auth/refresh`,
           { refresh_token: refreshToken },
@@ -157,6 +165,7 @@ api.interceptors.response.use(
             headers: {
               'Content-Type': 'application/json',
             },
+            withCredentials: true,
           }
         )
 
@@ -181,9 +190,17 @@ api.interceptors.response.use(
         // Retry the original request
         return api(originalRequest)
       } catch (refreshError) {
-        // Refresh failed, logout user
         processQueue(refreshError, null)
         isRefreshing = false
+        try {
+          await axios.post(
+            `${API_URL}/auth/logout`,
+            { refresh_token: refreshToken },
+            { withCredentials: true, headers: { 'Content-Type': 'application/json' } }
+          )
+        } catch {
+          /* ignore */
+        }
         tokenService.clearTokens()
         window.location.href = '/login'
         return Promise.reject(refreshError)

@@ -51,7 +51,9 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
   const [visitorPhone, setVisitorPhone] = useState('')
   const [visitorCompany, setVisitorCompany] = useState('')
   const [visitorPhotoDataUrl, setVisitorPhotoDataUrl] = useState<string | null>(null)
+  const [visitorIdDocumentDataUrl, setVisitorIdDocumentDataUrl] = useState<string | null>(null)
   const photoFileInputRef = useRef<HTMLInputElement>(null)
+  const idDocFileInputRef = useRef<HTMLInputElement>(null)
   const [photoMenuAnchor, setPhotoMenuAnchor] = useState<null | HTMLElement>(null)
   const [webcamOpen, setWebcamOpen] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -164,7 +166,9 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
     setVisitorPhone('')
     setVisitorCompany('')
     setVisitorPhotoDataUrl(null)
+    setVisitorIdDocumentDataUrl(null)
     if (photoFileInputRef.current) photoFileInputRef.current.value = ''
+    if (idDocFileInputRef.current) idDocFileInputRef.current.value = ''
     setPhotoMenuAnchor(null)
     setWebcamOpen(false)
     stopWebcamStream()
@@ -227,6 +231,25 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
     reader.readAsDataURL(file)
   }
 
+  const onVisitorIdDocumentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError(t('appointments.visitorPhotoInvalidType'))
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError(t('appointments.visitorPhotoTooLarge'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const r = reader.result
+      if (typeof r === 'string') setVisitorIdDocumentDataUrl(r)
+    }
+    reader.readAsDataURL(file)
+  }
+
   const handleCreate = () => {
     if (!startTime || !endTime) {
       setError(t('appointments.selectTimes'))
@@ -251,6 +274,7 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
       visitor_phone: visitorPhone,
       visitor_company: visitorCompany,
       ...(visitorPhotoDataUrl ? { visitor_photo_base64: visitorPhotoDataUrl } : {}),
+      ...(visitorIdDocumentDataUrl ? { visitor_id_document_base64: visitorIdDocumentDataUrl } : {}),
     })
   }
 
@@ -461,6 +485,49 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
                 {!visitorPhotoDataUrl && (
                   <Typography variant="caption" color="text.secondary">
                     {t('appointments.visitorPhotoHint')}
+                  </Typography>
+                )}
+              </Box>
+            </Grid>
+            <Grid item xs={12}>
+              <input
+                ref={idDocFileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={onVisitorIdDocumentSelected}
+              />
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+                <Button
+                  variant="outlined"
+                  component="button"
+                  type="button"
+                  onClick={() => idDocFileInputRef.current?.click()}
+                >
+                  {t('appointments.visitorIdDocumentButton')}
+                </Button>
+                {visitorIdDocumentDataUrl && (
+                  <>
+                    <Box
+                      component="img"
+                      src={visitorIdDocumentDataUrl}
+                      alt=""
+                      sx={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 1, border: 1, borderColor: 'divider' }}
+                    />
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setVisitorIdDocumentDataUrl(null)
+                        if (idDocFileInputRef.current) idDocFileInputRef.current.value = ''
+                      }}
+                    >
+                      {t('appointments.visitorIdDocumentClear')}
+                    </Button>
+                  </>
+                )}
+                {!visitorIdDocumentDataUrl && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t('appointments.visitorIdDocumentHint')}
                   </Typography>
                 )}
               </Box>

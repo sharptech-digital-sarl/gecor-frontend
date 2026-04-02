@@ -52,7 +52,7 @@ export default function Settings() {
   const handleGoogleConnect = async () => {
     setCalendarLoading(true)
     try {
-      const response = await api.get('/auth/google/start', { params: { next_path: '/settings' } })
+      const response = await api.get('/auth/google/start', { params: { next_path: '/app/settings' } })
       const url = response.data?.auth_url
       if (!url) throw new Error('Missing OAuth URL')
       window.location.href = url

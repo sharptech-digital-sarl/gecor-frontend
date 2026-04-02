@@ -40,10 +40,10 @@
 
 @keyframes glow {
   0%, 100% {
-    box-shadow: 0 0 20px rgba(0, 102, 204, 0.4);
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.12);
   }
   50% {
-    box-shadow: 0 0 30px rgba(0, 102, 204, 0.6), 0 0 40px rgba(0, 166, 81, 0.4);
+    box-shadow: 0 0 18px rgba(0, 0, 0, 0.18);
   }
 }
 
@@ -83,15 +83,13 @@
 }
 
 .glow-on-hover:hover {
-  box-shadow: 0 0 20px rgba(0, 102, 204, 0.5),
-              0 0 40px rgba(0, 166, 81, 0.3),
-              0 0 60px rgba(0, 102, 204, 0.2);
-  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
 }
 
 /* Animated gradient background */
 .animated-gradient {
-  background: linear-gradient(-45deg, #0066CC, #00A651, #3385D6, #33B873);
+  background: linear-gradient(-45deg, #eceff1, #cfd8dc, #b0bec5, #90a4ae);
   background-size: 400% 400%;
   animation: gradient-shift 15s ease infinite;
 }

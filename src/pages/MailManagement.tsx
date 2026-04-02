@@ -151,10 +151,6 @@ export default function MailManagement() {
             onClick={() => setUploadOpen(true)}
             sx={{
               minWidth: 180,
-              background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f91 100%)',
-              },
             }}
           >
             {t('mail.uploadDocument')}
@@ -225,23 +221,24 @@ export default function MailManagement() {
         component={Paper}
         sx={{
           borderRadius: 3,
-          overflow: 'hidden',
+          maxHeight: 'min(70vh, 720px)',
+          overflow: 'auto',
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
           transition: 'all 0.3s ease',
           '&:hover': {
-            boxShadow: '0 8px 30px rgba(0, 102, 204, 0.15), 0 4px 12px rgba(0, 166, 81, 0.1)',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.1)',
           },
         }}
       >
-        <Table>
+        <Table stickyHeader>
           <TableHead>
             <TableRow
               sx={{
-                background: 'linear-gradient(135deg, rgba(0, 102, 204, 0.12) 0%, rgba(0, 166, 81, 0.12) 100%)',
                 '& .MuiTableCell-head': {
                   fontWeight: 700,
                   fontSize: '0.95rem',
                   letterSpacing: '0.5px',
+                  bgcolor: 'grey.100',
                 },
               }}
             >
@@ -318,9 +315,7 @@ export default function MailManagement() {
                   sx={{
                     transition: 'all 0.2s ease',
                     '&:hover': {
-                      backgroundColor: 'rgba(0, 102, 204, 0.04)',
-                      transform: 'scale(1.01)',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+                      bgcolor: 'action.hover',
                     },
                   }}
                 >

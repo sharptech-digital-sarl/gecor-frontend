@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../services/api'
 import { tokenService } from '../services/tokenService'
+import { queryClient } from '../queryClient'
 
 interface User {
   id: string
@@ -184,21 +185,18 @@ export function useAuth() {
   }
 
   /**
-   * Logout and clear all tokens
+   * Déconnexion : révoque le refresh côté API (cookie + corps), puis efface stockage et cache React Query.
    */
   const logout = async () => {
     try {
-      // Optionally call logout endpoint to invalidate refresh token on server
-      const refreshToken = tokenService.getRefreshToken()
-      if (refreshToken) {
-        await api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {
-          // Ignore errors on logout
-        })
-      }
-    } catch (error) {
-      // Ignore errors
+      await api.post('/auth/logout', {
+        refresh_token: tokenService.getRefreshToken() || undefined,
+      })
+    } catch {
+      /* ignorer : on nettoie quand même localement */
     } finally {
       tokenService.clearTokens()
+      queryClient.clear()
       setUser(null)
       setIsAuthenticated(false)
     }

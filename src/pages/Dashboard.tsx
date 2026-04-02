@@ -18,8 +18,7 @@ type StatCardConfig = {
   title: string
   value: number
   icon: React.ReactNode
-  color: string
-  bgGradient: string
+  borderAccent: string
   isLoading: boolean
   path: string
 }
@@ -105,46 +104,41 @@ export default function Dashboard() {
       title: t('dashboard.mailTotal'),
       value: mailStats?.total ?? 0,
       icon: <MailIcon />,
-      color: '#0066CC',
-      bgGradient: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
+      borderAccent: '#1565c0',
       isLoading: isLoadingMail,
-      path: '/mail',
+      path: '/app/mail',
     },
     {
       title: t('dashboard.mailReceived'),
       value: mailStats?.received ?? 0,
       icon: <HourglassEmptyIcon />,
-      color: '#0ea5e9',
-      bgGradient: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+      borderAccent: '#0277bd',
       isLoading: isLoadingMail,
-      path: '/mail',
+      path: '/app/mail',
     },
     {
       title: t('dashboard.mailInReview'),
       value: mailStats?.inReview ?? 0,
       icon: <AssignmentIcon />,
-      color: '#f59e0b',
-      bgGradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      borderAccent: '#00838f',
       isLoading: isLoadingMail,
-      path: '/mail',
+      path: '/app/mail',
     },
     {
       title: t('dashboard.mailApproved'),
       value: mailStats?.approved ?? 0,
       icon: <CheckCircleIcon />,
-      color: '#00A651',
-      bgGradient: 'linear-gradient(135deg, #00A651 0%, #008542 100%)',
+      borderAccent: '#2e7d32',
       isLoading: isLoadingMail,
-      path: '/mail',
+      path: '/app/mail',
     },
     {
       title: t('dashboard.mailOverdue'),
       value: mailStats?.overdue ?? 0,
       icon: <WarningIcon />,
-      color: '#ef4444',
-      bgGradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+      borderAccent: '#c62828',
       isLoading: isLoadingMail,
-      path: '/mail',
+      path: '/app/mail',
     },
   ]
 
@@ -153,46 +147,41 @@ export default function Dashboard() {
       title: t('dashboard.apptToday'),
       value: appointmentStats?.today ?? 0,
       icon: <CalendarIcon />,
-      color: '#0066CC',
-      bgGradient: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
+      borderAccent: '#0d47a1',
       isLoading: isLoadingAppointments,
-      path: '/appointments',
+      path: '/app/appointments',
     },
     {
       title: t('dashboard.apptWeek'),
       value: appointmentStats?.week ?? 0,
       icon: <EventNoteIcon />,
-      color: '#7c3aed',
-      bgGradient: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)',
+      borderAccent: '#00838f',
       isLoading: isLoadingAppointments,
-      path: '/appointments',
+      path: '/app/appointments',
     },
     {
       title: t('dashboard.apptConfirmed'),
       value: appointmentStats?.confirmed ?? 0,
       icon: <EventAvailableIcon />,
-      color: '#00A651',
-      bgGradient: 'linear-gradient(135deg, #00A651 0%, #008542 100%)',
+      borderAccent: '#1565c0',
       isLoading: isLoadingAppointments,
-      path: '/appointments',
+      path: '/app/appointments',
     },
     {
       title: t('dashboard.apptPending'),
       value: appointmentStats?.pending ?? 0,
       icon: <HourglassEmptyIcon />,
-      color: '#f59e0b',
-      bgGradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      borderAccent: '#ef6c00',
       isLoading: isLoadingAppointments,
-      path: '/appointments',
+      path: '/app/appointments',
     },
     {
       title: t('dashboard.apptUpcomingTotal'),
       value: appointmentStats?.totalInHorizon ?? 0,
       icon: <CalendarIcon />,
-      color: '#0891b2',
-      bgGradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+      borderAccent: '#0277bd',
       isLoading: isLoadingAppointments,
-      path: '/appointments',
+      path: '/app/appointments',
     },
   ]
 
@@ -229,10 +218,9 @@ export default function Dashboard() {
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
               borderRadius: 1.5,
               transition: 'all 0.25s ease',
-              borderTop: `3px solid ${card.color}`,
+              borderTop: `3px solid ${card.borderAccent}`,
               '&:hover': {
-                boxShadow: `0 6px 16px ${card.color}35`,
-                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
               },
             }}
           >
@@ -249,12 +237,12 @@ export default function Dashboard() {
                     sx={{
                       width: 36,
                       height: 36,
-                      borderRadius: 1.5,
-                      background: card.bgGradient,
+                      borderRadius: 1,
+                      bgcolor: 'rgba(21, 101, 192, 0.12)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'white',
+                      color: 'primary.main',
                       mb: 1,
                       '& svg': { fontSize: 20 },
                     }}
@@ -272,7 +260,7 @@ export default function Dashboard() {
                     variant="h5"
                     sx={{
                       fontWeight: 700,
-                      color: card.color,
+                      color: 'text.primary',
                       lineHeight: 1.1,
                       fontSize: { xs: '1.35rem', md: '1.5rem' },
                     }}
@@ -291,18 +279,7 @@ export default function Dashboard() {
   return (
     <Box sx={{ width: '100%', maxWidth: '100%' }}>
       <Box sx={{ mb: 3 }}>
-        <Typography
-          variant="h4"
-          sx={{
-            fontWeight: 700,
-            mb: 1,
-            color: 'text.primary',
-            background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
+        <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, color: 'primary.dark' }}>
           {t('dashboard.title')}
         </Typography>
         <Typography variant="body1" color="text.secondary">

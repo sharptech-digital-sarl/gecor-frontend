@@ -21,6 +21,10 @@ export type VisitorPhotoZoomDialogProps = {
   onClose: () => void
   imageUrl: string | null
   visitorName?: string
+  /** Overrides default i18n title (e.g. ID document) */
+  title?: string
+  /** Overrides default i18n hint */
+  hint?: string
 }
 
 /**
@@ -31,6 +35,8 @@ export default function VisitorPhotoZoomDialog({
   onClose,
   imageUrl,
   visitorName,
+  title: titleOverride,
+  hint: hintOverride,
 }: VisitorPhotoZoomDialogProps) {
   const { t } = useTranslation()
   const [zoom, setZoom] = useState(1)
@@ -44,12 +50,12 @@ export default function VisitorPhotoZoomDialog({
   return (
     <Dialog open={effectiveOpen} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
       <DialogTitle>
-        {t('appointments.visitorPhotoZoomTitle')}
+        {titleOverride ?? t('appointments.visitorPhotoZoomTitle')}
         {visitorName ? ` — ${visitorName}` : ''}
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {t('appointments.visitorPhotoZoomHint')}
+          {hintOverride ?? t('appointments.visitorPhotoZoomHint')}
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <ZoomOutIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
@@ -59,7 +65,7 @@ export default function VisitorPhotoZoomDialog({
             max={MAX_ZOOM}
             step={0.25}
             onChange={(_, v) => setZoom(v as number)}
-            aria-label={t('appointments.visitorPhotoZoomTitle')}
+            aria-label={titleOverride ?? t('appointments.visitorPhotoZoomTitle')}
             sx={{ flex: 1 }}
           />
           <ZoomInIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />

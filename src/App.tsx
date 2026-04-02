@@ -10,8 +10,12 @@ import Appointments from './pages/Appointments'
 import ReceptionDashboard from './pages/ReceptionDashboard'
 import UserAdministration from './pages/UserAdministration'
 import PublicBooking from './pages/PublicBooking'
+import PublicHome from './pages/PublicHome'
 import Settings from './pages/Settings'
 import DeletionRequests from './pages/DeletionRequests'
+import AdminAuditLogs from './pages/AdminAuditLogs'
+import AdminSystemNotifications from './pages/AdminSystemNotifications'
+import AdminPublicPosts from './pages/AdminPublicPosts'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -37,7 +41,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
     return null
   }
   if (!isAdminUser(user?.role)) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/app" replace />
   }
   return <>{children}</>
 }
@@ -54,7 +58,7 @@ function PermissionRoute({
     return null
   }
   if (!hasPermission(user, permission)) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/app" replace />
   }
   return <>{children}</>
 }
@@ -62,10 +66,12 @@ function PermissionRoute({
 function App() {
   return (
     <Routes>
+      <Route path="/" element={<PublicHome />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/book" element={<PublicBooking />} />
+      <Route path="/public/booking" element={<PublicBooking />} />
+      <Route path="/book" element={<Navigate to="/public/booking" replace />} />
       <Route
-        path="/"
+        path="/app"
         element={
           <PrivateRoute>
             <Layout />
@@ -90,6 +96,30 @@ function App() {
             <AdminRoute>
               <UserAdministration />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/audit"
+          element={
+            <PermissionRoute permission="admin.audit">
+              <AdminAuditLogs />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="admin/notifications"
+          element={
+            <PermissionRoute permission="admin.notifications">
+              <AdminSystemNotifications />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="admin/public-posts"
+          element={
+            <PermissionRoute permission="content.public_posts">
+              <AdminPublicPosts />
+            </PermissionRoute>
           }
         />
         <Route path="settings" element={<Settings />} />

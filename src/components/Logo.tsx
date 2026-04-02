@@ -68,10 +68,10 @@ export default function Logo({ size = 'medium', showText = true, variant = 'hori
           width: currentSize.icon,
           height: currentSize.icon,
           borderRadius: 2,
-          background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
+          bgcolor: 'primary.dark',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 4px 12px rgba(0, 102, 204, 0.3)',
+          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.15)',
           position: 'relative',
           '&::after': {
             content: '""',
@@ -99,13 +99,11 @@ export default function Logo({ size = 'medium', showText = true, variant = 'hori
             variant={size === 'large' ? 'h5' : size === 'medium' ? 'h6' : 'body1'}
             sx={{
               fontWeight: 700,
-              color: variant === 'horizontal' ? 'white' : 'inherit',
-              background: variant === 'vertical' 
-                ? 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)'
-                : 'none',
-              backgroundClip: variant === 'vertical' ? 'text' : 'none',
-              WebkitBackgroundClip: variant === 'vertical' ? 'text' : 'none',
-              WebkitTextFillColor: variant === 'vertical' ? 'transparent' : 'inherit',
+              color: variant === 'horizontal' ? 'white' : 'text.primary',
+              background: 'none',
+              backgroundClip: 'unset',
+              WebkitBackgroundClip: 'unset',
+              WebkitTextFillColor: 'unset',
               lineHeight: 1.2,
               fontSize: `${currentSize.textSize}px`,
               textShadow: variant === 'horizontal' ? '0 1px 2px rgba(0, 0, 0, 0.1)' : 'none',

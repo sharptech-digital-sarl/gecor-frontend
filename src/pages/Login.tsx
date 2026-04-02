@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Container,
   Paper,
@@ -10,6 +10,7 @@ import {
   Alert,
   Fade,
   Stack,
+  Link,
 } from '@mui/material'
 import {
   LockOutlined as LockIcon,
@@ -36,7 +37,7 @@ export default function Login() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && (isAuthenticated || tokenService.hasTokens())) {
-      navigate('/')
+      navigate('/app')
     }
   }, [isAuthenticated, authLoading, navigate])
 
@@ -55,7 +56,7 @@ export default function Login() {
         setLoading(false)
       } else {
         // No MFA required, navigate to dashboard
-        navigate('/')
+        navigate('/app')
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || t('auth.loginFailed'))
@@ -85,7 +86,7 @@ export default function Login() {
 
     try {
       await verifyMFA(mfaSessionId, normalizedCode)
-      navigate('/')
+      navigate('/app')
     } catch (err: any) {
       // Enhanced error handling with more specific messages
       const errorDetail = err.response?.data?.detail || err.response?.data?.message
@@ -132,60 +133,20 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(-45deg, #0066CC, #00A651, #3385D6, #33B873)',
-        backgroundSize: '400% 400%',
-        animation: 'gradient-shift 15s ease infinite',
-        position: 'relative',
-        overflow: 'hidden',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.4) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.15) 0%, transparent 50%), radial-gradient(circle at 50% 20%, rgba(79, 172, 254, 0.3) 0%, transparent 50%)',
-          animation: 'pulse 8s ease-in-out infinite',
-        },
-        '&::after': {
-          content: '""',
-          position: 'absolute',
-          top: '-50%',
-          left: '-50%',
-          width: '200%',
-          height: '200%',
-          background: 'radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px)',
-          backgroundSize: '50px 50px',
-          animation: 'float 20s linear infinite',
-        },
+        bgcolor: 'background.default',
       }}
     >
-      <Container component="main" maxWidth="xs" sx={{ position: 'relative', zIndex: 1 }}>
+      <Container component="main" maxWidth="xs">
         <Fade in timeout={600}>
           <Paper
-            elevation={24}
+            elevation={0}
             sx={{
               p: 5,
               width: '100%',
-              borderRadius: 4,
-              background: 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              boxShadow: '0 8px 32px rgba(0, 102, 204, 0.3), 0 4px 16px rgba(0, 166, 81, 0.2)',
-              position: 'relative',
-              overflow: 'hidden',
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '4px',
-                background: 'linear-gradient(90deg, #0066CC, #00A651, #3385D6, #33B873)',
-                backgroundSize: '200% 100%',
-                animation: 'gradient-shift 3s ease infinite',
-              },
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             }}
           >
             <Box sx={{ textAlign: 'center', mb: 4 }}>
@@ -201,12 +162,32 @@ export default function Login() {
               >
                 <Logo size="large" showText={false} />
               </Box>
-              <Typography component="h1" variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
-                {t('common.appName')}
+              <Typography
+                component="h1"
+                sx={{
+                  fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+                  fontWeight: 800,
+                  fontSize: { xs: '1.65rem', sm: '2rem' },
+                  letterSpacing: '0.04em',
+                  lineHeight: 1.15,
+                  mb: 1,
+                  color: 'primary.dark',
+                }}
+              >
+                {t('auth.loginAppTitle')}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                 {t('common.subtitle')}
               </Typography>
+              <Link
+                component={RouterLink}
+                to="/"
+                variant="body2"
+                underline="hover"
+                sx={{ fontWeight: 600 }}
+              >
+                {t('auth.linkToPublicHome')}
+              </Link>
             </Box>
 
           {error && (
@@ -256,15 +237,9 @@ export default function Login() {
                     type="submit"
                     fullWidth
                     variant="contained"
+                    color="primary"
                     size="large"
-                    sx={{
-                      mt: 2,
-                      py: 1.5,
-                      background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f91 100%)',
-                      },
-                    }}
+                    sx={{ mt: 2, py: 1.5 }}
                     disabled={loading}
                   >
                     {loading ? t('auth.signingIn') : t('auth.login')}
@@ -324,15 +299,9 @@ export default function Login() {
                     type="submit"
                     fullWidth
                     variant="contained"
+                    color="primary"
                     size="large"
-                    sx={{
-                      mt: 1,
-                      py: 1.5,
-                      background: 'linear-gradient(135deg, #0066CC 0%, #00A651 100%)',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f91 100%)',
-                      },
-                    }}
+                    sx={{ mt: 1, py: 1.5 }}
                     disabled={loading || mfaCode.length !== 6}
                   >
                     {loading ? t('auth.verifying') : t('auth.verify')}

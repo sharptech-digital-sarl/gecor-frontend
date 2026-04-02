@@ -5,7 +5,6 @@ import {
   Typography,
   Paper,
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   Button,
@@ -16,6 +15,11 @@ import {
   Tooltip,
   IconButton,
 } from '@mui/material'
+import {
+  ModalSectionHeader,
+  ModalSectionBody,
+  modalDialogFooterSx,
+} from '../common/DetailModalLayout'
 import { Calendar, momentLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import dayjs from 'dayjs'
@@ -51,7 +55,7 @@ dayjs.extend(duration)
 dayjs.extend(minMax)
 
 /** Rendez-vous — bleu (aligné sur la charte FPI) */
-const COLOR_APPOINTMENT = '#0066CC'
+const COLOR_APPOINTMENT = '#1565c0'
 /** Courriers — orange distinct */
 const COLOR_MAIL = '#e65100'
 
@@ -96,6 +100,9 @@ export default function AppointmentCalendarPanel() {
   const [visitorPhotoUrl, setVisitorPhotoUrl] = useState<string | null>(null)
   const [visitorPhotoZoomOpen, setVisitorPhotoZoomOpen] = useState(false)
   const visitorPhotoBlobRef = useRef<string | null>(null)
+  const [visitorIdDocUrl, setVisitorIdDocUrl] = useState<string | null>(null)
+  const [visitorIdDocZoomOpen, setVisitorIdDocZoomOpen] = useState(false)
+  const visitorIdDocBlobRef = useRef<string | null>(null)
   const [openingMail, setOpeningMail] = useState(false)
 
   useEffect(() => {
@@ -189,7 +196,51 @@ export default function AppointmentCalendarPanel() {
   }, [viewOpen, selectedEvent])
 
   useEffect(() => {
-    if (!viewOpen) setVisitorPhotoZoomOpen(false)
+    const revokeCurrent = () => {
+      if (visitorIdDocBlobRef.current) {
+        URL.revokeObjectURL(visitorIdDocBlobRef.current)
+        visitorIdDocBlobRef.current = null
+      }
+      setVisitorIdDocUrl(null)
+    }
+
+    if (!viewOpen || selectedEvent?.eventType !== 'appointment') {
+      revokeCurrent()
+      return undefined
+    }
+    const apt = selectedEvent.resource
+    if (!apt?.visitor?.visitor_id_document_path || !apt?.id) {
+      revokeCurrent()
+      return undefined
+    }
+    let alive = true
+    revokeCurrent()
+    ;(async () => {
+      try {
+        const res = await api.get(`/appointments/${apt.id}/visitor/id-document`, { responseType: 'blob' })
+        if (!alive) return
+        const url = URL.createObjectURL(res.data)
+        if (!alive) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        visitorIdDocBlobRef.current = url
+        setVisitorIdDocUrl(url)
+      } catch {
+        if (alive) revokeCurrent()
+      }
+    })()
+    return () => {
+      alive = false
+      revokeCurrent()
+    }
+  }, [viewOpen, selectedEvent])
+
+  useEffect(() => {
+    if (!viewOpen) {
+      setVisitorPhotoZoomOpen(false)
+      setVisitorIdDocZoomOpen(false)
+    }
   }, [viewOpen])
 
   const confirmMutation = useMutation({
@@ -389,16 +440,62 @@ export default function AppointmentCalendarPanel() {
         </Alert>
       )}
 
-      <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {selectedEvent?.eventType === 'mail'
-            ? t('reception.mailDetails')
-            : t('appointments.appointmentDetails')}
-        </DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={viewOpen}
+        onClose={() => setViewOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { overflow: 'hidden' } }}
+      >
+        {selectedEvent?.eventType === 'appointment' && selectedEvent.resource && (
+          <ModalSectionHeader>
+            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              {t('appointments.appointmentDetails')}
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+              {selectedEvent.resource.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              {formatDateTime(selectedEvent.resource.start_time)} — {formatDateTime(selectedEvent.resource.end_time)}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              <Chip label={appointmentStatusLabel(selectedEvent.resource.status)} size="small" variant="outlined" />
+              {selectedEvent.resource.visitor?.checked_in !== undefined && (
+                <Chip
+                  label={
+                    selectedEvent.resource.visitor?.checked_in
+                      ? t('reception.checkedIn')
+                      : t('reception.pendingCheckIn')
+                  }
+                  color={selectedEvent.resource.visitor?.checked_in ? 'success' : 'default'}
+                  size="small"
+                />
+              )}
+            </Box>
+          </ModalSectionHeader>
+        )}
+        {selectedEvent?.eventType === 'mail' && selectedEvent.resource && (
+          <ModalSectionHeader>
+            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              {t('reception.mailDetails')}
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+              {selectedEvent.resource.title}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              <Chip label={selectedEvent.resource.reference_number || '—'} size="small" variant="outlined" />
+              <Chip label={mailStatusLabel(selectedEvent.resource.status)} size="small" />
+              {selectedEvent.resource.is_overdue && (
+                <Chip label={t('dashboard.mailOverdue')} color="error" size="small" />
+              )}
+            </Box>
+          </ModalSectionHeader>
+        )}
+        <DialogContent sx={{ p: 0 }}>
           {selectedEvent?.eventType === 'appointment' && selectedEvent.resource && (
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-              <Box sx={{ flexShrink: 0 }}>
+            <ModalSectionBody>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <Box sx={{ flexShrink: 0, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                 <Tooltip
                   title={visitorPhotoUrl ? t('appointments.visitorPhotoZoomEnlarge') : ''}
                   disableHoverListener={!visitorPhotoUrl}
@@ -462,22 +559,61 @@ export default function AppointmentCalendarPanel() {
                     )}
                   </Box>
                 </Tooltip>
+                {selectedEvent.resource.visitor?.visitor_id_document_path ? (
+                  <Box sx={{ textAlign: 'center', maxWidth: 120 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                      sx={{ mb: 0.5, fontWeight: 600 }}
+                    >
+                      {t('appointments.visitorIdDocumentLabel')}
+                    </Typography>
+                    <Tooltip
+                      title={visitorIdDocUrl ? t('appointments.visitorIdDocumentZoomEnlarge') : ''}
+                      disableHoverListener={!visitorIdDocUrl}
+                    >
+                      <Box
+                        sx={{
+                          position: 'relative',
+                          width: 96,
+                          height: 96,
+                          borderRadius: 1,
+                          overflow: 'hidden',
+                          border: 1,
+                          borderColor: 'divider',
+                          cursor: visitorIdDocUrl ? 'zoom-in' : 'default',
+                          bgcolor: 'grey.100',
+                        }}
+                        onClick={() => visitorIdDocUrl && setVisitorIdDocZoomOpen(true)}
+                        onKeyDown={(e) => {
+                          if ((e.key === 'Enter' || e.key === ' ') && visitorIdDocUrl) {
+                            e.preventDefault()
+                            setVisitorIdDocZoomOpen(true)
+                          }
+                        }}
+                        role={visitorIdDocUrl ? 'button' : undefined}
+                        tabIndex={visitorIdDocUrl ? 0 : undefined}
+                      >
+                        {visitorIdDocUrl ? (
+                          <Box
+                            component="img"
+                            src={visitorIdDocUrl}
+                            alt=""
+                            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        ) : null}
+                      </Box>
+                    </Tooltip>
+                  </Box>
+                ) : null}
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="h6" gutterBottom>
-                  {selectedEvent.resource.title}
-                </Typography>
                 {selectedEvent.resource.description && (
                   <Typography variant="body2" color="text.secondary" paragraph>
                     {selectedEvent.resource.description}
                   </Typography>
                 )}
-                <Typography variant="body2" paragraph>
-                  <strong>{t('appointments.start')}:</strong> {formatDateTime(selectedEvent.resource.start_time)}
-                </Typography>
-                <Typography variant="body2" paragraph>
-                  <strong>{t('appointments.end')}:</strong> {formatDateTime(selectedEvent.resource.end_time)}
-                </Typography>
                 {selectedEvent.resource.visitor_name && (
                   <>
                     <Typography variant="body2" paragraph>
@@ -495,24 +631,13 @@ export default function AppointmentCalendarPanel() {
                     )}
                   </>
                 )}
-                <Typography variant="body2" paragraph>
-                  <strong>{t('appointments.appointmentStatus')}:</strong>{' '}
-                  {appointmentStatusLabel(selectedEvent.resource.status)}
-                </Typography>
               </Box>
             </Box>
+            </ModalSectionBody>
           )}
           {selectedEvent?.eventType === 'mail' && selectedEvent.resource && (
+            <ModalSectionBody>
             <Box>
-              <Typography variant="h6" gutterBottom>
-                {selectedEvent.resource.title}
-              </Typography>
-              <Typography variant="body2" paragraph>
-                <strong>{t('mail.reference')}:</strong> {selectedEvent.resource.reference_number || '—'}
-              </Typography>
-              <Typography variant="body2" paragraph>
-                <strong>{t('mail.status')}:</strong> {mailStatusLabel(selectedEvent.resource.status)}
-              </Typography>
               <Typography variant="body2" paragraph>
                 <strong>{t('mail.priority')}:</strong> {selectedEvent.resource.priority || '—'}
               </Typography>
@@ -530,9 +655,6 @@ export default function AppointmentCalendarPanel() {
                   {selectedEvent.resource.description}
                 </Typography>
               )}
-              {selectedEvent.resource.is_overdue && (
-                <Chip label={t('dashboard.mailOverdue')} color="error" size="small" sx={{ mt: 1 }} />
-              )}
               <Button
                 sx={{ mt: 2 }}
                 variant="outlined"
@@ -542,9 +664,10 @@ export default function AppointmentCalendarPanel() {
                 {openingMail ? t('common.loading') : t('reception.openMailDocument')}
               </Button>
             </Box>
+            </ModalSectionBody>
           )}
         </DialogContent>
-        <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+        <DialogActions sx={modalDialogFooterSx}>
           <Button onClick={() => setViewOpen(false)}>{t('common.close')}</Button>
           {selectedEvent?.eventType === 'appointment' && selectedEvent.resource && (
             <>
@@ -615,6 +738,18 @@ export default function AppointmentCalendarPanel() {
             ? selectedEvent.resource?.visitor_name
             : undefined
         }
+      />
+      <VisitorPhotoZoomDialog
+        open={visitorIdDocZoomOpen}
+        onClose={() => setVisitorIdDocZoomOpen(false)}
+        imageUrl={visitorIdDocUrl}
+        visitorName={
+          selectedEvent?.eventType === 'appointment'
+            ? selectedEvent.resource?.visitor_name
+            : undefined
+        }
+        title={t('appointments.visitorIdDocumentZoomTitle')}
+        hint={t('appointments.visitorIdDocumentZoomHint')}
       />
     </>
   )
