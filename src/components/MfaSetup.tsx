@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Switch,
 } from '@mui/material'
 import {
   Security as SecurityIcon,
@@ -21,11 +22,13 @@ import {
   Cancel as CancelIcon,
 } from '@mui/icons-material'
 import { QRCodeSVG } from 'qrcode.react'
+import { alpha, useTheme } from '@mui/material/styles'
 import { useAuth } from '../hooks/useAuth'
 
 export default function MfaSetup() {
   const { t } = useTranslation()
-  const { user, setupMFA, activateMFA, disableMFA } = useAuth()
+  const theme = useTheme()
+  const { user, setupMFA, activateMFA, disableMFA, refreshUser } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -89,6 +92,7 @@ export default function MfaSetup() {
       setSuccess(t('mfa.disabled'))
       setDisableDialogOpen(false)
       setDisableCode('')
+      await refreshUser()
     } catch (err: any) {
       setError(err.response?.data?.detail || t('mfa.disableFailed'))
       setDisableCode('')
@@ -99,16 +103,55 @@ export default function MfaSetup() {
 
   const isMfaEnabled = user?.is_mfa_enabled || false
 
+  const handleMfaSwitch = (_: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+    if (checked && !isMfaEnabled) {
+      if (!setupData && !loading) {
+        void handleSetup()
+      }
+      return
+    }
+    if (!checked && isMfaEnabled) {
+      setDisableDialogOpen(true)
+    }
+  }
+
   return (
     <Paper sx={{ p: 3 }}>
-      <Box display="flex" alignItems="center" gap={2} mb={3}>
+      <Box display="flex" alignItems="center" gap={2} mb={2}>
         <SecurityIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-        <Box>
-          <Typography variant="h6">{t('mfa.title')}</Typography>
+        <Box flex={1}>
+          <Typography variant="h6">{t('settings.security')}</Typography>
           <Typography variant="body2" color="text.secondary">
-            {t('mfa.description')}
+            {t('settings.securityDescription')}
           </Typography>
         </Box>
+      </Box>
+
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 2,
+          py: 1.5,
+          px: 0,
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            {t('mfa.title')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('mfa.toggleHint')}
+          </Typography>
+        </Box>
+        <Switch
+          checked={isMfaEnabled}
+          onChange={handleMfaSwitch}
+          color="primary"
+          inputProps={{ 'aria-label': t('mfa.title') }}
+          disabled={loading}
+        />
       </Box>
 
       <Divider sx={{ my: 2 }} />
@@ -200,7 +243,7 @@ export default function MfaSetup() {
                     variant="body2"
                     sx={{
                       fontFamily: 'monospace',
-                      bgcolor: 'grey.100',
+                      bgcolor: alpha(theme.palette.text.primary, 0.08),
                       p: 1,
                       borderRadius: 1,
                       wordBreak: 'break-all',

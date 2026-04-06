@@ -1,8 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { tokenService } from './services/tokenService'
-import { isAdminUser } from './utils/roles'
-import { hasPermission } from './utils/permissions'
+import { isAdminUser, isMasterUser } from './utils/roles'
+import { canReviewDeletionRequests, hasPermission } from './utils/permissions'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import MailManagement from './pages/MailManagement'
@@ -16,6 +16,8 @@ import DeletionRequests from './pages/DeletionRequests'
 import AdminAuditLogs from './pages/AdminAuditLogs'
 import AdminSystemNotifications from './pages/AdminSystemNotifications'
 import AdminPublicPosts from './pages/AdminPublicPosts'
+import ForgotPassword from './pages/ForgotPassword'
+import PasswordResetRequestsAdmin from './pages/PasswordResetRequestsAdmin'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +48,17 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function MasterRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return null
+  }
+  if (!isMasterUser(user?.role)) {
+    return <Navigate to="/app" replace />
+  }
+  return <>{children}</>
+}
+
 function PermissionRoute({
   permission,
   children,
@@ -63,11 +76,23 @@ function PermissionRoute({
   return <>{children}</>
 }
 
+function DeletionRequestsRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return null
+  }
+  if (!canReviewDeletionRequests(user)) {
+    return <Navigate to="/app" replace />
+  }
+  return <>{children}</>
+}
+
 function App() {
   return (
     <Routes>
       <Route path="/" element={<PublicHome />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/public/booking" element={<PublicBooking />} />
       <Route path="/book" element={<Navigate to="/public/booking" replace />} />
       <Route
@@ -85,9 +110,9 @@ function App() {
         <Route
           path="deletion-requests"
           element={
-            <PermissionRoute permission="deletion_requests.review">
+            <DeletionRequestsRoute>
               <DeletionRequests />
-            </PermissionRoute>
+            </DeletionRequestsRoute>
           }
         />
         <Route
@@ -96,6 +121,14 @@ function App() {
             <AdminRoute>
               <UserAdministration />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/password-reset-requests"
+          element={
+            <MasterRoute>
+              <PasswordResetRequestsAdmin />
+            </MasterRoute>
           }
         />
         <Route

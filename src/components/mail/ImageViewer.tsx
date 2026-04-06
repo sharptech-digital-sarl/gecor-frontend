@@ -86,7 +86,7 @@ export default function ImageViewer({ src, alt }: ImageViewerProps) {
         height: '600px',
         position: 'relative',
         overflow: 'hidden',
-        bgcolor: 'grey.100',
+        bgcolor: 'action.hover',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',

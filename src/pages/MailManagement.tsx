@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   Box,
   Typography,
@@ -22,11 +22,14 @@ import {
   Select,
   MenuItem,
   TableSortLabel,
+  Checkbox,
 } from '@mui/material'
+import { useTheme, alpha } from '@mui/material/styles'
 import {
   Add as AddIcon,
   Visibility as ViewIcon,
   Search as SearchIcon,
+  DeleteOutline as DeleteOutlineIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
@@ -36,14 +39,18 @@ import DocumentUpload from '../components/mail/DocumentUpload'
 import DocumentViewer from '../components/mail/DocumentViewer'
 import { useAuth } from '../hooks/useAuth'
 import { hasPermission } from '../utils/permissions'
+import { isAdminUser } from '../utils/roles'
 
 type MailSortKey = 'reference_number' | 'title' | 'status' | 'priority' | 'created_at'
 
 export default function MailManagement() {
   const { t } = useTranslation()
+  const theme = useTheme()
   const { user } = useAuth()
   const { formatDate, formatTime } = useDateFormat()
   const canCreateMail = hasPermission(user, 'mail.create')
+  const canBulkDeleteMail = isAdminUser(user?.role) && hasPermission(user, 'mail.delete')
+  const [selectedMailIds, setSelectedMailIds] = useState<string[]>([])
   const [uploadOpen, setUploadOpen] = useState(false)
   const [viewOpen, setViewOpen] = useState(false)
   const [selectedDocument, setSelectedDocument] = useState<any>(null)
@@ -65,11 +72,35 @@ export default function MailManagement() {
     },
   })
 
+  const mailStatusLabel = (status: string) => {
+    const m: Record<string, string> = {
+      received: t('mail.statusReceived'),
+      in_review: t('mail.statusInTreatment'),
+      in_treatment: t('mail.statusInTreatment'),
+      indexed: t('mail.statusIndexed'),
+      assigned: t('mail.statusAssigned'),
+      pending_validation: t('mail.statusPendingValidation'),
+      on_hold: t('mail.statusOnHold'),
+      approved: t('mail.statusApproved'),
+      closed: t('mail.statusClosed'),
+      rejected: t('mail.statusRejected'),
+      archived: t('mail.statusArchived'),
+    }
+    return m[status] || status || '—'
+  }
+
   const getStatusColor = (status: string) => {
-    const colors: Record<string, 'default' | 'info' | 'success' | 'error' | 'secondary'> = {
+    const colors: Record<string, 'default' | 'info' | 'success' | 'error' | 'secondary' | 'warning'> = {
       received: 'default',
       in_review: 'info',
+      in_treatment: 'info',
+      indexed: 'default',
+      assigned: 'info',
+      pending_validation: 'warning',
+      pending_director: 'secondary',
+      on_hold: 'warning',
       approved: 'success',
+      closed: 'info',
       rejected: 'error',
       archived: 'secondary',
     }
@@ -132,6 +163,42 @@ export default function MailManagement() {
     [filtered, sortRows]
   )
 
+  const selectableMailIds = useMemo(
+    () => sortedDocuments.map((d: { id: string }) => d.id),
+    [sortedDocuments]
+  )
+
+  useEffect(() => {
+    setSelectedMailIds((prev) => prev.filter((id) => selectableMailIds.includes(id)))
+  }, [selectableMailIds])
+
+  const bulkDeleteMailMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data } = await api.post<{ deleted_count: number }>('/mail/bulk-delete', { ids })
+      return data
+    },
+    onSuccess: () => {
+      setSelectedMailIds([])
+      queryClient.invalidateQueries({ queryKey: ['mail-documents'] })
+    },
+  })
+
+  const toggleMailRow = useCallback((id: string) => {
+    setSelectedMailIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }, [])
+
+  const selectAllMailRows = useCallback(() => {
+    setSelectedMailIds((prev) =>
+      prev.length === selectableMailIds.length ? [] : [...selectableMailIds]
+    )
+  }, [selectableMailIds])
+
+  const handleBulkDeleteMail = () => {
+    if (!selectedMailIds.length) return
+    if (!window.confirm(t('mail.bulkDeleteConfirm', { count: selectedMailIds.length }))) return
+    bulkDeleteMailMutation.mutate(selectedMailIds)
+  }
+
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4} flexWrap="wrap" gap={2}>
@@ -143,19 +210,34 @@ export default function MailManagement() {
             {documents ? `${documents.length} ${t('mail.documents')}` : t('mail.loading')}
           </Typography>
         </Box>
-        {canCreateMail && (
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={() => setUploadOpen(true)}
-            sx={{
-              minWidth: 180,
-            }}
-          >
-            {t('mail.uploadDocument')}
-          </Button>
-        )}
+        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+          {canCreateMail && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<AddIcon />}
+              onClick={() => setUploadOpen(true)}
+              sx={{
+                minWidth: 180,
+              }}
+            >
+              {t('mail.uploadDocument')}
+            </Button>
+          )}
+          {canBulkDeleteMail && (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteOutlineIcon />}
+              disabled={!selectedMailIds.length || bulkDeleteMailMutation.isPending}
+              onClick={handleBulkDeleteMail}
+            >
+              {bulkDeleteMailMutation.isPending
+                ? t('common.loading')
+                : t('mail.bulkDeleteSelected', { count: selectedMailIds.length })}
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {error && (
@@ -195,8 +277,14 @@ export default function MailManagement() {
           >
             <MenuItem value="">{t('mail.filterAll')}</MenuItem>
             <MenuItem value="received">{t('mail.statusReceived')}</MenuItem>
-            <MenuItem value="in_review">{t('mail.statusInReview')}</MenuItem>
+            <MenuItem value="indexed">{t('mail.statusIndexed')}</MenuItem>
+            <MenuItem value="assigned">{t('mail.statusAssigned')}</MenuItem>
+            <MenuItem value="in_treatment">{t('mail.statusInTreatment')}</MenuItem>
+            <MenuItem value="pending_director">{t('mail.statusPendingDirector')}</MenuItem>
+            <MenuItem value="pending_validation">{t('mail.statusPendingValidation')}</MenuItem>
+            <MenuItem value="on_hold">{t('mail.statusOnHold')}</MenuItem>
             <MenuItem value="approved">{t('mail.statusApproved')}</MenuItem>
+            <MenuItem value="closed">{t('mail.statusClosed')}</MenuItem>
             <MenuItem value="rejected">{t('mail.statusRejected')}</MenuItem>
             <MenuItem value="archived">{t('mail.statusArchived')}</MenuItem>
           </Select>
@@ -235,13 +323,26 @@ export default function MailManagement() {
             <TableRow
               sx={{
                 '& .MuiTableCell-head': {
-                  fontWeight: 700,
                   fontSize: '0.95rem',
                   letterSpacing: '0.5px',
-                  bgcolor: 'grey.100',
                 },
               }}
             >
+              {canBulkDeleteMail && (
+                <TableCell padding="checkbox" sx={{ width: 48 }}>
+                  <Checkbox
+                    size="small"
+                    indeterminate={
+                      selectedMailIds.length > 0 && selectedMailIds.length < selectableMailIds.length
+                    }
+                    checked={
+                      selectableMailIds.length > 0 && selectedMailIds.length === selectableMailIds.length
+                    }
+                    onChange={selectAllMailRows}
+                    inputProps={{ 'aria-label': t('mail.bulkSelectAllAria') }}
+                  />
+                </TableCell>
+              )}
               <TableCell>
                 <TableSortLabel
                   active={sortBy === 'reference_number'}
@@ -287,19 +388,19 @@ export default function MailManagement() {
                   {t('mail.created')}
                 </TableSortLabel>
               </TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{t('common.actions')}</TableCell>
+              <TableCell>{t('common.actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={canBulkDeleteMail ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <CircularProgress />
                 </TableCell>
               </TableRow>
             ) : !sortedDocuments || sortedDocuments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={canBulkDeleteMail ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <Typography color="text.secondary">
                     {searchTerm || statusFilter || priorityFilter
                       ? t('mail.noSearchResults')
@@ -312,13 +413,35 @@ export default function MailManagement() {
                 <TableRow
                   key={doc.id}
                   hover
-                  sx={{
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      bgcolor: 'action.hover',
+                  selected={canBulkDeleteMail && selectedMailIds.includes(doc.id)}
+                  sx={[
+                    {
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: 'action.hover',
+                      },
                     },
-                  }}
+                    doc.highlight_destined
+                      ? {
+                          bgcolor: alpha(
+                            theme.palette.warning.main,
+                            theme.palette.mode === 'dark' ? 0.14 : 0.1,
+                          ),
+                          boxShadow: `inset 3px 0 0 ${theme.palette.warning.main}`,
+                        }
+                      : {},
+                  ]}
                 >
+                  {canBulkDeleteMail && (
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={selectedMailIds.includes(doc.id)}
+                        onChange={() => toggleMailRow(doc.id)}
+                        inputProps={{ 'aria-label': t('mail.bulkSelectRowAria', { ref: doc.reference_number }) }}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Typography variant="body2" fontWeight="medium">
                       {doc.reference_number || '-'}
@@ -340,23 +463,7 @@ export default function MailManagement() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={
-                        doc.status === 'received'
-                          ? t('mail.statusReceived')
-                          : doc.status === 'in_review'
-                            ? t('mail.statusInReview')
-                            : doc.status === 'approved'
-                              ? t('mail.statusApproved')
-                              : doc.status === 'rejected'
-                                ? t('mail.statusRejected')
-                                : doc.status === 'archived'
-                                  ? t('mail.statusArchived')
-                                  : doc.status || 'unknown'
-                      }
-                      color={getStatusColor(doc.status)}
-                      size="small"
-                    />
+                    <Chip label={mailStatusLabel(doc.status)} color={getStatusColor(doc.status)} size="small" />
                   </TableCell>
                   <TableCell>
                     <Box display="flex" flexWrap="wrap" gap={0.5} alignItems="center">

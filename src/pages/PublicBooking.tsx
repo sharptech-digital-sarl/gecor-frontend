@@ -26,6 +26,13 @@ import {
   modalDialogFooterSx,
 } from '../components/common/DetailModalLayout'
 
+function base64PngToBlob(b64: string): Blob {
+  const bin = atob(b64)
+  const arr = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+  return new Blob([arr], { type: 'image/png' })
+}
+
 /** Détails d’erreur renvoyés par POST /public/book-appointment (API en anglais). */
 const PUBLIC_BOOKING_API_ERROR_I18N: Record<string, string> = {
   'Organizer not found or not available for public bookings': 'publicBooking.errorOrganizerNotFound',
@@ -43,11 +50,16 @@ export default function PublicBooking() {
   const [visitorEmail, setVisitorEmail] = useState('')
   const [visitorPhone, setVisitorPhone] = useState('')
   const [visitorCompany, setVisitorCompany] = useState('')
+  const [visitorPhotoDataUrl, setVisitorPhotoDataUrl] = useState<string | null>(null)
   const [visitorIdDocumentDataUrl, setVisitorIdDocumentDataUrl] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState('')
   const [idDocError, setIdDocError] = useState('')
   const [qrDownloadBusy, setQrDownloadBusy] = useState(false)
   const [qrDownloadError, setQrDownloadError] = useState('')
+  const [qrDownloadInfo, setQrDownloadInfo] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const idDocInputRef = useRef<HTMLInputElement>(null)
+  const qrImageRef = useRef<HTMLImageElement | null>(null)
 
   const bookingMutation = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
@@ -55,43 +67,126 @@ export default function PublicBooking() {
       return response.data
     },
     onSuccess: () => {
+      setVisitorPhotoDataUrl(null)
       setVisitorIdDocumentDataUrl(null)
+      if (photoInputRef.current) photoInputRef.current.value = ''
       if (idDocInputRef.current) idDocInputRef.current.value = ''
+      setPhotoError('')
       setIdDocError('')
       setQrDownloadError('')
+      setQrDownloadInfo('')
     },
   })
 
-  const appointmentId = bookingMutation.data?.id as string | undefined
-  const qrSrc =
+  const bookPayload = bookingMutation.data as
+    | { id?: string; visitor_qr_png_base64?: string }
+    | undefined
+  const appointmentId = bookPayload?.id as string | undefined
+  const qrPngBase64 = bookPayload?.visitor_qr_png_base64
+  const qrDataUrl = qrPngBase64 ? `data:image/png;base64,${qrPngBase64}` : null
+  const qrUrlFallback =
     bookingMutation.isSuccess && appointmentId
       ? `${String(api.defaults.baseURL).replace(/\/+$/, '')}/public/appointments/${appointmentId}/visitor-qrcode`
       : null
+  const displayQrSrc = qrDataUrl ?? qrUrlFallback
+
+  const triggerBlobDownload = useCallback((blob: Blob, filename: string) => {
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = filename
+    a.rel = 'noopener noreferrer'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    // Laisser le temps au navigateur de démarrer le téléchargement avant revoke
+    window.setTimeout(() => URL.revokeObjectURL(objUrl), 120_000)
+  }, [])
 
   const handleDownloadQrPng = useCallback(async () => {
-    if (!appointmentId) return
+    if (!appointmentId || !displayQrSrc) return
     setQrDownloadError('')
+    setQrDownloadInfo('')
     setQrDownloadBusy(true)
-    try {
-      const res = await api.get(`/public/appointments/${appointmentId}/visitor-qrcode`, {
-        responseType: 'blob',
+    const filename = `gecor-qr-rendez-vous-${appointmentId}.png`
+
+    if (qrPngBase64) {
+      try {
+        triggerBlobDownload(base64PngToBlob(qrPngBase64), filename)
+        setQrDownloadBusy(false)
+        return
+      } catch {
+        // continuer avec fetch / canvas / nouvel onglet
+      }
+    }
+
+    const fetchQrBlob = async (url: string): Promise<Blob | null> => {
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: { Accept: 'image/png,*/*' },
       })
-      const blob = res.data as Blob
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `gecor-qr-rendez-vous-${appointmentId}.png`
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      if (!res.ok) return null
+      const blob = await res.blob()
+      const ct = (blob.type || res.headers.get('content-type') || '').toLowerCase()
+      if (ct.includes('json')) return null
+      if (blob.size < 8) return null
+      const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer())
+      const isPng =
+        head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+      if (!isPng && !ct.includes('png')) return null
+      return blob
+    }
+
+    const canvasBlobFromDisplayedImage = (): Promise<Blob | null> =>
+      new Promise((resolve) => {
+        const el = qrImageRef.current
+        if (!el?.naturalWidth) return resolve(null)
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = el.naturalWidth
+          canvas.height = el.naturalHeight
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return resolve(null)
+          ctx.drawImage(el, 0, 0)
+          canvas.toBlob((b) => resolve(b), 'image/png')
+        } catch {
+          resolve(null)
+        }
+      })
+
+    try {
+      const withDl =
+        qrUrlFallback &&
+        `${qrUrlFallback}${qrUrlFallback.includes('?') ? '&' : '?'}download=1`
+      let blob: Blob | null = withDl ? await fetchQrBlob(withDl) : null
+      if (!blob && qrUrlFallback) blob = await fetchQrBlob(qrUrlFallback)
+      if (!blob) blob = await canvasBlobFromDisplayedImage()
+      if (blob) {
+        triggerBlobDownload(blob, filename)
+        return
+      }
+      const opened = window.open(withDl || displayQrSrc, '_blank', 'noopener,noreferrer')
+      if (opened) {
+        setQrDownloadInfo(t('publicBooking.qrDownloadOpenTab'))
+        return
+      }
+      setQrDownloadError(t('publicBooking.qrDownloadPopupBlocked'))
     } catch {
       setQrDownloadError(t('publicBooking.qrDownloadFailed'))
     } finally {
       setQrDownloadBusy(false)
     }
-  }, [appointmentId, t])
+  }, [
+    appointmentId,
+    displayQrSrc,
+    qrPngBase64,
+    qrUrlFallback,
+    t,
+    triggerBlobDownload,
+  ])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,28 +203,44 @@ export default function PublicBooking() {
       visitor_email: visitorEmail,
       visitor_phone: visitorPhone,
       visitor_company: visitorCompany,
+      ...(visitorPhotoDataUrl ? { visitor_photo_base64: visitorPhotoDataUrl } : {}),
       ...(visitorIdDocumentDataUrl ? { visitor_id_document_base64: visitorIdDocumentDataUrl } : {}),
     })
+  }
+
+  const validateAndReadImage = (
+    file: File,
+    onData: (dataUrl: string) => void,
+    onErr: (msg: string) => void
+  ) => {
+    if (!file.type.startsWith('image/')) {
+      onErr(t('appointments.visitorPhotoInvalidType'))
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      onErr(t('appointments.visitorPhotoTooLarge'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const r = reader.result
+      if (typeof r === 'string') onData(r)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const onVisitorPhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhotoError('')
+    const file = e.target.files?.[0]
+    if (!file) return
+    validateAndReadImage(file, setVisitorPhotoDataUrl, setPhotoError)
   }
 
   const onIdDocumentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     setIdDocError('')
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setIdDocError(t('appointments.visitorPhotoInvalidType'))
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setIdDocError(t('appointments.visitorPhotoTooLarge'))
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const r = reader.result
-      if (typeof r === 'string') setVisitorIdDocumentDataUrl(r)
-    }
-    reader.readAsDataURL(file)
+    validateAndReadImage(file, setVisitorIdDocumentDataUrl, setIdDocError)
   }
 
   return (
@@ -168,7 +279,7 @@ export default function PublicBooking() {
           </Alert>
         )}
 
-        {bookingMutation.isSuccess && qrSrc && (
+        {bookingMutation.isSuccess && displayQrSrc && (
           <Box sx={{ mb: 3 }}>
             <Divider sx={{ mb: 2 }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
@@ -190,8 +301,10 @@ export default function PublicBooking() {
             >
               <Box
                 component="img"
-                src={qrSrc}
+                ref={qrImageRef}
+                src={displayQrSrc}
                 alt={t('publicBooking.qrAlt')}
+                crossOrigin={qrDataUrl ? undefined : 'anonymous'}
                 sx={{ width: 240, height: 240, objectFit: 'contain' }}
               />
             </Box>
@@ -205,6 +318,11 @@ export default function PublicBooking() {
               >
                 {qrDownloadBusy ? t('publicBooking.qrDownloadBusy') : t('publicBooking.qrDownload')}
               </Button>
+              {qrDownloadInfo ? (
+                <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ maxWidth: 360 }}>
+                  {qrDownloadInfo}
+                </Typography>
+              ) : null}
               {qrDownloadError ? (
                 <Typography variant="caption" color="error" textAlign="center">
                   {qrDownloadError}
@@ -212,6 +330,12 @@ export default function PublicBooking() {
               ) : null}
             </Box>
           </Box>
+        )}
+
+        {photoError && (
+          <Alert severity="warning" sx={{ mb: 2 }} variant="outlined" onClose={() => setPhotoError('')}>
+            {photoError}
+          </Alert>
         )}
 
         {idDocError && (
@@ -315,12 +439,52 @@ export default function PublicBooking() {
             onChange={(e) => setVisitorCompany(e.target.value)}
           />
           <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={onVisitorPhotoSelected}
+          />
+          <input
             ref={idDocInputRef}
             type="file"
             accept="image/*"
             style={{ display: 'none' }}
             onChange={onIdDocumentSelected}
           />
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+              {t('publicBooking.visitorPhotoLabel')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              {t('publicBooking.visitorPhotoHint')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mb: 2 }}>
+              <Button variant="outlined" size="small" type="button" onClick={() => photoInputRef.current?.click()}>
+                {t('publicBooking.visitorIdDocumentChoose')}
+              </Button>
+              {visitorPhotoDataUrl && (
+                <>
+                  <Box
+                    component="img"
+                    src={visitorPhotoDataUrl}
+                    alt=""
+                    sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: '50%', border: 1, borderColor: 'divider' }}
+                  />
+                  <Button
+                    size="small"
+                    type="button"
+                    onClick={() => {
+                      setVisitorPhotoDataUrl(null)
+                      if (photoInputRef.current) photoInputRef.current.value = ''
+                    }}
+                  >
+                    {t('publicBooking.visitorIdDocumentClear')}
+                  </Button>
+                </>
+              )}
+            </Box>
+          </Box>
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
               {t('publicBooking.visitorIdDocumentLabel')}

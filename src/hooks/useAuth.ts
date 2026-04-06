@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import api from '../services/api'
 import { tokenService } from '../services/tokenService'
 import { queryClient } from '../queryClient'
+import {
+  syncSoundPrefsFromServer,
+  type NotificationSoundPresetId,
+} from '../utils/notificationSoundPreferences'
 
 interface User {
   id: string
@@ -11,8 +15,19 @@ interface User {
   role: string
   is_mfa_enabled?: boolean
   google_account_email?: string | null
+  /** Langue des e-mails (fr | en), alignée avec l’UI si synchronisée */
+  preferred_locale?: 'en' | 'fr' | null
   /** Effective permission keys from GET /auth/me */
   permissions?: string[]
+  /** Forcer le changement de mot de passe à la prochaine connexion (réinitialisation admin). */
+  password_must_change?: boolean
+  /** Préférences sons (compte), alignées avec le stockage local après GET /auth/me */
+  notification_sound_prefs?: {
+    enabled: boolean
+    mail: NotificationSoundPresetId
+    appointment: NotificationSoundPresetId
+    other: NotificationSoundPresetId
+  }
 }
 
 interface LoginResponse {
@@ -21,6 +36,7 @@ interface LoginResponse {
   access_token?: string
   refresh_token?: string
   token_type?: string
+  password_change_required?: boolean
 }
 
 export function useAuth() {
@@ -41,6 +57,7 @@ export function useAuth() {
     try {
       const response = await api.get('/auth/me')
       setUser(response.data)
+      syncSoundPrefsFromServer(response.data?.notification_sound_prefs)
       setIsAuthenticated(true)
     } catch (error) {
       tokenService.clearTokens()
@@ -58,8 +75,8 @@ export function useAuth() {
   const login = async (username: string, password: string): Promise<LoginResponse> => {
     // Send as JSON instead of FormData
     const response = await api.post<LoginResponse>('/auth/login', {
-      username,
-      password,
+      username: username.trim(),
+      password: password.trim(),
     })
 
     const data = response.data
@@ -202,6 +219,10 @@ export function useAuth() {
     }
   }
 
+  const refreshUser = async () => {
+    await fetchUser()
+  }
+
   return {
     user,
     isAuthenticated,
@@ -212,6 +233,7 @@ export function useAuth() {
     activateMFA,
     disableMFA,
     logout,
+    refreshUser,
   }
 }
 

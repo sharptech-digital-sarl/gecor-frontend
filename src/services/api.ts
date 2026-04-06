@@ -212,5 +212,8 @@ api.interceptors.response.use(
   }
 )
 
+/** Base `.../api/v1` pour les appels hors axios (ex. SSE). */
+export { API_URL }
+
 export default api
 

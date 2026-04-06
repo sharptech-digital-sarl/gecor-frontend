@@ -3,9 +3,26 @@ import 'dayjs/locale/en'
 import 'dayjs/locale/fr'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import { normalizeApiDatetimeIsoString } from './apiDatetime'
 
 dayjs.extend(localizedFormat)
 dayjs.extend(relativeTime)
+
+function dayjsFromApiInput(date: string | Date | dayjs.Dayjs | null | undefined): dayjs.Dayjs | null {
+  if (date == null) return null
+  if (dayjs.isDayjs(date)) return date.isValid() ? date : null
+  if (date instanceof Date) {
+    const d = dayjs(date)
+    return d.isValid() ? d : null
+  }
+  if (typeof date === 'string') {
+    const n = normalizeApiDatetimeIsoString(date)
+    const d = dayjs(n ?? date)
+    return d.isValid() ? d : null
+  }
+  const d = dayjs(date as never)
+  return d.isValid() ? d : null
+}
 
 /**
  * Format a date according to the selected language
@@ -18,10 +35,10 @@ export function formatDate(
   format: string = 'LL',
   locale: string = 'en'
 ): string {
-  if (!date) return '-'
-  
+  const d = dayjsFromApiInput(date)
+  if (!d) return '-'
   dayjs.locale(locale)
-  return dayjs(date).format(format)
+  return d.format(format)
 }
 
 /**
@@ -33,10 +50,10 @@ export function formatTime(
   date: string | Date | dayjs.Dayjs | null | undefined,
   locale: string = 'en'
 ): string {
-  if (!date) return '-'
-  
+  const d = dayjsFromApiInput(date)
+  if (!d) return '-'
   dayjs.locale(locale)
-  return dayjs(date).format('LT') // Localized time format
+  return d.format('LT')
 }
 
 /**
@@ -48,10 +65,10 @@ export function formatDateTime(
   date: string | Date | dayjs.Dayjs | null | undefined,
   locale: string = 'en'
 ): string {
-  if (!date) return '-'
-  
+  const d = dayjsFromApiInput(date)
+  if (!d) return '-'
   dayjs.locale(locale)
-  return dayjs(date).format('LLL') // Localized date and time format
+  return d.format('LLL')
 }
 
 /**
@@ -65,12 +82,11 @@ export function formatTimeRange(
   endDate: string | Date | dayjs.Dayjs | null | undefined,
   locale: string = 'en'
 ): string {
-  if (!startDate || !endDate) return '-'
-  
+  const start = dayjsFromApiInput(startDate)
+  const end = dayjsFromApiInput(endDate)
+  if (!start || !end) return '-'
   dayjs.locale(locale)
-  const start = dayjs(startDate).format('LT')
-  const end = dayjs(endDate).format('LT')
-  return `${start} - ${end}`
+  return `${start.format('LT')} - ${end.format('LT')}`
 }
 
 /**

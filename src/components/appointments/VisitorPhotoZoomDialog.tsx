@@ -77,7 +77,7 @@ export default function VisitorPhotoZoomDialog({
           sx={{
             overflow: 'auto',
             maxHeight: { xs: '50vh', sm: '65vh' },
-            bgcolor: 'grey.100',
+            bgcolor: 'action.hover',
             borderRadius: 1,
             border: 1,
             borderColor: 'divider',

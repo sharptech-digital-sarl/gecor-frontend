@@ -33,20 +33,28 @@ import {
   Stack,
   TextField,
   IconButton,
+  Radio,
+  RadioGroup,
+  FormLabel,
+  Divider,
+  Switch,
 } from '@mui/material'
 import {
-  Edit as EditIcon,
   ExpandMore as ExpandMoreIcon,
   Group as GroupIcon,
   PersonAdd as PersonAddIcon,
   Add as AddIcon,
   DeleteOutline as DeleteOutlineIcon,
+  Visibility as VisibilityIcon,
+  VpnKey as VpnKeyIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../hooks/useAuth'
 import { useTableSort } from '../hooks/useTableSort'
 import { isAdminUser, isMasterUser } from '../utils/roles'
 import api from '../services/api'
+import PasswordField from '../components/PasswordField'
 
 type AdminUser = {
   id: string
@@ -55,11 +63,37 @@ type AdminUser = {
   full_name: string
   role: string
   is_active: boolean
+  created_at: string
 }
 
-const DEFAULT_ROLE_DOC_KEYS = ['master', 'director', 'secretary', 'analyst', 'receptionist', 'guest'] as const
+type UserDetail = AdminUser & {
+  updated_at?: string
+  last_login?: string | null
+  is_mfa_enabled?: boolean
+  password_must_change?: boolean
+  preferred_locale?: string | null
+}
 
-type SortKey = 'username' | 'full_name' | 'email' | 'role' | 'is_active'
+type AuditRow = {
+  id: string
+  timestamp: string
+  action: string
+  resource_type: string
+  resource_id: string | null
+  ip_address: string | null
+}
+
+const DEFAULT_ROLE_DOC_KEYS = [
+  'master',
+  'director',
+  'secretary',
+  'analyst',
+  'receptionist',
+  'archivist',
+  'guest',
+] as const
+
+type SortKey = 'username' | 'full_name' | 'email' | 'role' | 'is_active' | 'created_at'
 
 type RoleDto = {
   id: string
@@ -74,9 +108,22 @@ export default function UserAdministration() {
   const { t } = useTranslation()
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
-  const [editOpen, setEditOpen] = useState(false)
-  const [editing, setEditing] = useState<AdminUser | null>(null)
-  const [editRole, setEditRole] = useState<string>('')
+  const [detailUserId, setDetailUserId] = useState<string | null>(null)
+  const [detailForm, setDetailForm] = useState({
+    username: '',
+    email: '',
+    full_name: '',
+    role: '',
+    is_active: true,
+  })
+  const [resetPwdOpen, setResetPwdOpen] = useState(false)
+  const [resetMode, setResetMode] = useState<'policy' | 'custom'>('policy')
+  const [resetCustomPassword, setResetCustomPassword] = useState('')
+  const [resetMustChange, setResetMustChange] = useState(true)
+  const [resetPwdResult, setResetPwdResult] = useState<{ temporary?: string | null; message?: string } | null>(
+    null
+  )
+  const [activityOpen, setActivityOpen] = useState(false)
   const [newUserOpen, setNewUserOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
   const [newUsername, setNewUsername] = useState('')
@@ -101,6 +148,11 @@ export default function UserAdministration() {
 
   const canEditRoles = isMasterUser(currentUser?.role)
   const canOpenGroups = isAdminUser(currentUser?.role)
+  const canViewUserList = isAdminUser(currentUser?.role)
+  const canViewAuditLogs = Boolean(currentUser?.permissions?.includes('admin.audit'))
+
+  const isCurrentUserRole = (roleName: string) =>
+    roleName.trim().toLowerCase() === (currentUser?.role || '').trim().toLowerCase()
 
   const { data: users, isLoading, error } = useQuery({
     queryKey: ['admin-users'],
@@ -110,16 +162,77 @@ export default function UserAdministration() {
     },
   })
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: string }) => {
-      const response = await api.put(`/users/${id}`, { role })
+  const { data: detailUser, isLoading: detailLoading } = useQuery({
+    queryKey: ['admin-user', detailUserId],
+    queryFn: async () => {
+      const response = await api.get<UserDetail>(`/users/${detailUserId}`)
+      return response.data
+    },
+    enabled: Boolean(detailUserId),
+  })
+
+  useEffect(() => {
+    if (!detailUser || !detailUserId) return
+    setDetailForm({
+      username: detailUser.username,
+      email: detailUser.email,
+      full_name: detailUser.full_name,
+      role: detailUser.role,
+      is_active: detailUser.is_active,
+    })
+  }, [detailUser, detailUserId])
+
+  const saveUserMutation = useMutation({
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string
+      body: { username?: string; email?: string; full_name?: string; role?: string; is_active?: boolean }
+    }) => {
+      const response = await api.put(`/users/${id}`, body)
       return response.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-      setEditOpen(false)
-      setEditing(null)
+      queryClient.invalidateQueries({ queryKey: ['admin-user', detailUserId] })
     },
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (payload: {
+      mode: 'policy' | 'custom'
+      new_password?: string
+      must_change_on_next_login: boolean
+    }) => {
+      const response = await api.post<{ message: string; temporary_password?: string | null }>(
+        `/users/${detailUserId}/reset-password`,
+        payload
+      )
+      return response.data
+    },
+    onSuccess: (data) => {
+      setResetPwdOpen(false)
+      setResetCustomPassword('')
+      setResetPwdResult({
+        temporary: data.temporary_password,
+        message: data.message,
+      })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-user', detailUserId] })
+    },
+  })
+
+  const { data: userAuditRows, isLoading: userAuditLoading } = useQuery({
+    queryKey: ['admin-audit-user', detailUserId],
+    queryFn: async () => {
+      const p = new URLSearchParams()
+      p.set('limit', '80')
+      p.set('actor_user_id', detailUserId!)
+      const { data } = await api.get<AuditRow[]>(`/admin/audit-logs?${p.toString()}`)
+      return data
+    },
+    enabled: activityOpen && Boolean(detailUserId) && canViewAuditLogs,
   })
 
   const { data: roleList, isLoading: rolesLoading } = useQuery({
@@ -128,7 +241,7 @@ export default function UserAdministration() {
       const response = await api.get<RoleDto[]>('/roles/')
       return response.data
     },
-    enabled: groupsOpen || (canEditRoles && (newUserOpen || editOpen)),
+    enabled: groupsOpen || newUserOpen || (Boolean(detailUserId) && canEditRoles),
   })
 
   const { data: permCatalog, isLoading: catalogLoading } = useQuery({
@@ -274,6 +387,8 @@ export default function UserAdministration() {
             return row.role
           case 'is_active':
             return row.is_active ? 1 : 0
+          case 'created_at':
+            return new Date(row.created_at)
           default:
             return ''
         }
@@ -318,9 +433,6 @@ export default function UserAdministration() {
 
   const roleSelectLabel = (name: string) =>
     t(`usersAdmin.roleNames.${name}`, { defaultValue: name.replace(/_/g, ' ') })
-
-  const isCurrentUserRole = (roleName: string) =>
-    roleName.trim().toLowerCase() === (currentUser?.role || '').trim().toLowerCase()
 
   const toggleUserSelection = (id: string) => {
     setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -534,19 +646,28 @@ export default function UserAdministration() {
                   {t('usersAdmin.active')}
                 </TableSortLabel>
               </TableCell>
+              <TableCell>
+                <TableSortLabel
+                  active={sortBy === 'created_at'}
+                  direction={sortBy === 'created_at' ? sortDir : 'asc'}
+                  onClick={() => toggleSort('created_at')}
+                >
+                  {t('usersAdmin.createdAt')}
+                </TableSortLabel>
+              </TableCell>
               <TableCell align="right">{t('common.actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={canEditRoles ? 7 : 6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={canEditRoles ? 8 : 7} align="center" sx={{ py: 4 }}>
                   <CircularProgress size={28} />
                 </TableCell>
               </TableRow>
             ) : sorted.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEditRoles ? 7 : 6} align="center" sx={{ py: 3 }}>
+                <TableCell colSpan={canEditRoles ? 8 : 7} align="center" sx={{ py: 3 }}>
                   <Typography variant="body2" color="text.secondary">
                     {t('usersAdmin.noUsersMatchFilters')}
                   </Typography>
@@ -578,19 +699,20 @@ export default function UserAdministration() {
                       size="small"
                     />
                   </TableCell>
+                  <TableCell>{new Date(u.created_at).toLocaleString()}</TableCell>
                   <TableCell align="right">
-                    {canEditRoles && (
-                      <Button
+                    {canViewUserList && (
+                      <IconButton
                         size="small"
-                        startIcon={<EditIcon />}
+                        aria-label={t('usersAdmin.viewUserAria', { username: u.username })}
                         onClick={() => {
-                          setEditing(u)
-                          setEditRole(u.role)
-                          setEditOpen(true)
+                          setDetailUserId(u.id)
+                          setResetPwdResult(null)
+                          setActivityOpen(false)
                         }}
                       >
-                        {t('usersAdmin.editRole')}
-                      </Button>
+                        <VisibilityIcon fontSize="small" />
+                      </IconButton>
                     )}
                   </TableCell>
                 </TableRow>
@@ -600,54 +722,341 @@ export default function UserAdministration() {
         </Table>
       </TableContainer>
 
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('usersAdmin.editRoleTitle')}</DialogTitle>
+      <Dialog
+        open={Boolean(detailUserId)}
+        onClose={() => {
+          if (saveUserMutation.isPending || resetPasswordMutation.isPending) return
+          setDetailUserId(null)
+          setResetPwdResult(null)
+          setActivityOpen(false)
+        }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>{t('usersAdmin.userDetailTitle')}</DialogTitle>
         <DialogContent>
-          {editing && (
-            <Box sx={{ pt: 1 }}>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                {editing.full_name} ({editing.username})
-              </Typography>
-              {rolesLoading ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
-                  <CircularProgress size={22} />
-                  <Typography variant="body2" color="text.secondary">
-                    {t('common.loading')}
-                  </Typography>
-                </Box>
-              ) : (
-                <FormControl fullWidth sx={{ mt: 2 }}>
-                  <InputLabel>{t('usersAdmin.role')}</InputLabel>
-                  <Select
-                    label={t('usersAdmin.role')}
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                  >
-                    {(roleList ?? []).map((r) => (
-                      <MenuItem key={r.id} value={r.name}>
-                        {roleSelectLabel(r.name)}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+          {detailLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
             </Box>
+          )}
+          {!detailLoading && detailUser && (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              {resetPwdResult && (
+                <Alert
+                  severity="success"
+                  onClose={() => setResetPwdResult(null)}
+                  sx={{ mb: 1 }}
+                >
+                  <Typography variant="body2">{resetPwdResult.message}</Typography>
+                  {resetPwdResult.temporary ? (
+                    <Typography variant="body2" sx={{ mt: 1, fontFamily: 'monospace' }}>
+                      {t('usersAdmin.resetPasswordTemporaryLabel')}: {resetPwdResult.temporary}
+                    </Typography>
+                  ) : null}
+                </Alert>
+              )}
+              {saveUserMutation.isError && (
+                <Alert severity="error">
+                  {(saveUserMutation.error as { response?: { data?: { detail?: string } } })?.response?.data
+                    ?.detail || t('usersAdmin.saveUserError')}
+                </Alert>
+              )}
+              {canEditRoles ? (
+                <>
+                  <TextField
+                    label={t('auth.username')}
+                    value={detailForm.username}
+                    onChange={(e) => setDetailForm((f) => ({ ...f, username: e.target.value }))}
+                    fullWidth
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label={t('usersAdmin.email')}
+                    type="email"
+                    value={detailForm.email}
+                    onChange={(e) => setDetailForm((f) => ({ ...f, email: e.target.value }))}
+                    fullWidth
+                    autoComplete="off"
+                  />
+                  <TextField
+                    label={t('usersAdmin.fullName')}
+                    value={detailForm.full_name}
+                    onChange={(e) => setDetailForm((f) => ({ ...f, full_name: e.target.value }))}
+                    fullWidth
+                    autoComplete="off"
+                  />
+                  {rolesLoading ? (
+                    <CircularProgress size={22} />
+                  ) : (
+                    <FormControl fullWidth>
+                      <InputLabel>{t('usersAdmin.role')}</InputLabel>
+                      <Select
+                        label={t('usersAdmin.role')}
+                        value={detailForm.role}
+                        onChange={(e) => setDetailForm((f) => ({ ...f, role: e.target.value }))}
+                      >
+                        {(roleList ?? []).map((r) => (
+                          <MenuItem key={r.id} value={r.name}>
+                            {roleSelectLabel(r.name)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={detailForm.is_active}
+                        onChange={(e) =>
+                          setDetailForm((f) => ({ ...f, is_active: e.target.checked }))
+                        }
+                        disabled={detailUserId === currentUser?.id}
+                      />
+                    }
+                    label={t('usersAdmin.active')}
+                  />
+                  {detailUserId === currentUser?.id && (
+                    <Typography variant="caption" color="text.secondary">
+                      {t('usersAdmin.cannotDeactivateSelf')}
+                    </Typography>
+                  )}
+                </>
+              ) : (
+                <Stack spacing={1}>
+                  <Typography variant="body2">
+                    <strong>{t('auth.username')}:</strong> {detailUser.username}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>{t('usersAdmin.email')}:</strong> {detailUser.email}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>{t('usersAdmin.fullName')}:</strong> {detailUser.full_name}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>{t('usersAdmin.role')}:</strong>{' '}
+                    <Chip label={roleSelectLabel(detailUser.role)} size="small" />
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>{t('usersAdmin.active')}:</strong>{' '}
+                    {detailUser.is_active ? t('common.yes') : t('common.no')}
+                  </Typography>
+                </Stack>
+              )}
+              <Divider />
+              <Typography variant="subtitle2" color="text.secondary">
+                {t('usersAdmin.detailMeta')}
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {detailUser.is_mfa_enabled && (
+                  <Chip size="small" label={t('usersAdmin.mfaEnabled')} color="primary" variant="outlined" />
+                )}
+                {detailUser.password_must_change && (
+                  <Chip size="small" label={t('usersAdmin.mustChangePasswordBadge')} color="warning" />
+                )}
+              </Stack>
+              <Typography variant="caption" color="text.secondary" display="block">
+                {t('usersAdmin.createdAt')}: {new Date(detailUser.created_at).toLocaleString()}
+                {detailUser.last_login
+                  ? ` · ${t('usersAdmin.lastLogin')}: ${new Date(detailUser.last_login).toLocaleString()}`
+                  : ''}
+              </Typography>
+              <Divider />
+              <Typography variant="subtitle2">{t('usersAdmin.actionsSection')}</Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {canEditRoles && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<VpnKeyIcon />}
+                    onClick={() => {
+                      setResetPwdResult(null)
+                      setResetMode('policy')
+                      setResetCustomPassword('')
+                      setResetMustChange(true)
+                      setResetPwdOpen(true)
+                    }}
+                  >
+                    {t('usersAdmin.resetPassword')}
+                  </Button>
+                )}
+                {canViewAuditLogs && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<HistoryIcon />}
+                    onClick={() => setActivityOpen(true)}
+                  >
+                    {t('usersAdmin.activityHistory')}
+                  </Button>
+                )}
+              </Stack>
+              {!canViewAuditLogs && canEditRoles && (
+                <Typography variant="caption" color="text.secondary">
+                  {t('usersAdmin.activityNoPermission')}
+                </Typography>
+              )}
+            </Stack>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>{t('common.cancel')}</Button>
+          <Button
+            onClick={() => {
+              setDetailUserId(null)
+              setResetPwdResult(null)
+            }}
+            disabled={saveUserMutation.isPending}
+          >
+            {t('common.close')}
+          </Button>
+          {canEditRoles && detailUser && (
+            <Button
+              variant="contained"
+              disabled={
+                saveUserMutation.isPending ||
+                rolesLoading ||
+                !detailUser ||
+                !(
+                  detailForm.username !== detailUser.username ||
+                  detailForm.email !== detailUser.email ||
+                  detailForm.full_name !== detailUser.full_name ||
+                  detailForm.role !== detailUser.role ||
+                  detailForm.is_active !== detailUser.is_active
+                )
+              }
+              onClick={() => {
+                if (!detailUserId) return
+                saveUserMutation.mutate({
+                  id: detailUserId,
+                  body: {
+                    username: detailForm.username.trim(),
+                    email: detailForm.email.trim(),
+                    full_name: detailForm.full_name.trim(),
+                    role: detailForm.role,
+                    is_active: detailForm.is_active,
+                  },
+                })
+              }}
+            >
+              {saveUserMutation.isPending ? t('common.loading') : t('usersAdmin.saveProfile')}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={resetPwdOpen} onClose={() => !resetPasswordMutation.isPending && setResetPwdOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('usersAdmin.resetPasswordTitle')}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <FormLabel>{t('usersAdmin.resetPasswordModeLabel')}</FormLabel>
+            <RadioGroup
+              value={resetMode}
+              onChange={(e) => setResetMode(e.target.value as 'policy' | 'custom')}
+            >
+              <FormControlLabel value="policy" control={<Radio />} label={t('usersAdmin.resetPasswordPolicy')} />
+              <FormControlLabel value="custom" control={<Radio />} label={t('usersAdmin.resetPasswordCustom')} />
+            </RadioGroup>
+            {resetMode === 'custom' && (
+              <PasswordField
+                label={t('auth.password')}
+                value={resetCustomPassword}
+                onChange={(e) => setResetCustomPassword(e.target.value)}
+                fullWidth
+                autoComplete="new-password"
+                helperText={t('usersAdmin.resetPasswordCustomHint')}
+                showStrengthMeter
+              />
+            )}
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={resetMustChange}
+                  onChange={(e) => setResetMustChange(e.target.checked)}
+                />
+              }
+              label={t('usersAdmin.resetPasswordMustChangeLabel')}
+            />
+            <Typography variant="caption" color="text.secondary">
+              {t('usersAdmin.resetPasswordMustChangeHint')}
+            </Typography>
+            {resetPasswordMutation.isError && (
+              <Alert severity="error">
+                {(resetPasswordMutation.error as { response?: { data?: { detail?: string } } })?.response?.data
+                  ?.detail || t('usersAdmin.resetPasswordError')}
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResetPwdOpen(false)} disabled={resetPasswordMutation.isPending}>
+            {t('common.cancel')}
+          </Button>
           <Button
             variant="contained"
             disabled={
-              !editing ||
-              updateMutation.isPending ||
-              rolesLoading ||
-              editRole === editing?.role
+              resetPasswordMutation.isPending ||
+              (resetMode === 'custom' && resetCustomPassword.length < 8)
             }
-            onClick={() => editing && updateMutation.mutate({ id: editing.id, role: editRole })}
+            onClick={() =>
+              resetPasswordMutation.mutate({
+                mode: resetMode,
+                new_password: resetMode === 'custom' ? resetCustomPassword : undefined,
+                must_change_on_next_login: resetMustChange,
+              })
+            }
           >
-            {t('common.save')}
+            {resetPasswordMutation.isPending ? t('common.loading') : t('usersAdmin.resetPasswordSubmit')}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={activityOpen} onClose={() => setActivityOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          {t('usersAdmin.activityModalTitle', { name: detailUser?.full_name || '' })}
+        </DialogTitle>
+        <DialogContent>
+          {userAuditLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t('adminAudit.colTime')}</TableCell>
+                    <TableCell>{t('adminAudit.colAction')}</TableCell>
+                    <TableCell>{t('adminAudit.colResource')}</TableCell>
+                    <TableCell>{t('adminAudit.colIp')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(userAuditRows ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} align="center">
+                        <Typography variant="body2" color="text.secondary">
+                          {t('usersAdmin.activityEmpty')}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    (userAuditRows ?? []).map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>{new Date(row.timestamp).toLocaleString()}</TableCell>
+                        <TableCell>{row.action}</TableCell>
+                        <TableCell>
+                          {row.resource_type}
+                          {row.resource_id ? ` · ${row.resource_id}` : ''}
+                        </TableCell>
+                        <TableCell>{row.ip_address ?? '—'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setActivityOpen(false)}>{t('common.close')}</Button>
         </DialogActions>
       </Dialog>
 
@@ -685,14 +1094,14 @@ export default function UserAdministration() {
               required
               autoComplete="off"
             />
-            <TextField
+            <PasswordField
               label={t('auth.password')}
-              type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               fullWidth
               required
               autoComplete="new-password"
+              showStrengthMeter
             />
             {rolesLoading ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>

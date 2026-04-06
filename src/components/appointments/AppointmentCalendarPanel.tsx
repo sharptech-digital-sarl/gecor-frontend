@@ -22,6 +22,8 @@ import {
 } from '../common/DetailModalLayout'
 import { Calendar, momentLocalizer } from 'react-big-calendar'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
+import moment from 'moment'
+import 'moment/locale/fr'
 import dayjs from 'dayjs'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
@@ -43,7 +45,14 @@ import {
   TaskAlt as TaskAltIcon,
   DeleteOutline as DeleteOutlineIcon,
   PersonOff as PersonOffIcon,
+  Add as AddIcon,
 } from '@mui/icons-material'
+import type { SlotInfo, Components } from 'react-big-calendar'
+import CreateAppointmentDialog from './CreateAppointmentDialog'
+import { buildCalendarCreateHoverComponents } from './CalendarCreateCellWrappers'
+
+/** Aligné sur le pas par défaut du calendrier (créneaux semaine / jour). */
+const CALENDAR_SLOT_STEP_MINUTES = 30
 
 dayjs.extend(isSameOrBefore)
 dayjs.extend(isSameOrAfter)
@@ -104,15 +113,22 @@ export default function AppointmentCalendarPanel() {
   const [visitorIdDocZoomOpen, setVisitorIdDocZoomOpen] = useState(false)
   const visitorIdDocBlobRef = useRef<string | null>(null)
   const [openingMail, setOpeningMail] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createInitialRange, setCreateInitialRange] = useState<{ start: Date; end: Date } | null>(null)
+  const canCreateAppointment = hasPermission(user, 'appointments.create')
 
   useEffect(() => {
     dayjs.locale(i18n.language)
-  }, [i18n.language])
+    const lng = (i18n.resolvedLanguage || i18n.language || 'en').toLowerCase()
+    moment.locale(lng.startsWith('fr') ? 'fr' : 'en')
+  }, [i18n.language, i18n.resolvedLanguage])
 
+  /** react-big-calendar attend Moment via momentLocalizer — Day.js n’expose pas localeData() (erreur vues semaine/jour). */
   const localizer = useMemo(() => {
-    dayjs.locale(i18n.language)
-    return momentLocalizer(dayjs)
-  }, [i18n.language])
+    const lng = (i18n.resolvedLanguage || i18n.language || 'en').toLowerCase()
+    moment.locale(lng.startsWith('fr') ? 'fr' : 'en')
+    return momentLocalizer(moment)
+  }, [i18n.language, i18n.resolvedLanguage])
 
   const [appointmentsQuery, mailQuery] = useQueries({
     queries: [
@@ -360,14 +376,59 @@ export default function AppointmentCalendarPanel() {
   const canCancelAptCalendar = (apt: { organizer_id?: string }) =>
     isVisitHostCalendar(apt) || canDeleteApt
 
+  const handleCloseCreateAppointment = () => {
+    setCreateOpen(false)
+    setCreateInitialRange(null)
+  }
+
+  const handleOpenCreateAppointment = () => {
+    setCreateInitialRange(null)
+    setCreateOpen(true)
+  }
+
+  const handleSelectCalendarSlot = (slotInfo: SlotInfo) => {
+    if (!canCreateAppointment) return
+    setCreateInitialRange({ start: slotInfo.start, end: slotInfo.end })
+    setCreateOpen(true)
+  }
+
+  const handleOpenCreateWithRange = useCallback((range: { start: Date; end: Date }) => {
+    setCreateInitialRange(range)
+    setCreateOpen(true)
+  }, [])
+
+  const calendarHoverComponents = useMemo(
+    () =>
+      buildCalendarCreateHoverComponents({
+        enabled: canCreateAppointment,
+        onOpenCreate: handleOpenCreateWithRange,
+        label: t('reception.calendarCellCreateButton'),
+        slotStepMinutes: CALENDAR_SLOT_STEP_MINUTES,
+      }),
+    [canCreateAppointment, handleOpenCreateWithRange, t]
+  )
+
   const mailStatusLabel = (status?: string) => {
     switch (status) {
       case 'received':
         return t('mail.statusReceived')
       case 'in_review':
-        return t('mail.statusInReview')
+      case 'in_treatment':
+        return t('mail.statusInTreatment')
+      case 'indexed':
+        return t('mail.statusIndexed')
+      case 'assigned':
+        return t('mail.statusAssigned')
+      case 'pending_validation':
+        return t('mail.statusPendingValidation')
+      case 'pending_director':
+        return t('mail.statusPendingDirector')
+      case 'on_hold':
+        return t('mail.statusOnHold')
       case 'approved':
         return t('mail.statusApproved')
+      case 'closed':
+        return t('mail.statusClosed')
       case 'rejected':
         return t('mail.statusRejected')
       case 'archived':
@@ -380,21 +441,42 @@ export default function AppointmentCalendarPanel() {
   return (
     <>
       <Paper sx={{ p: 2, minHeight: '600px' }}>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary">
-            {t('reception.calendarLegend')}
-          </Typography>
-          <Chip
-            size="small"
-            label={t('reception.legendAppointments')}
-            sx={{ bgcolor: COLOR_APPOINTMENT, color: 'white', fontWeight: 600 }}
-          />
-          <Chip
-            size="small"
-            label={t('reception.legendMail')}
-            sx={{ bgcolor: COLOR_MAIL, color: 'white', fontWeight: 600 }}
-          />
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 2,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mb: 1,
+          }}
+        >
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary">
+              {t('reception.calendarLegend')}
+            </Typography>
+            <Chip
+              size="small"
+              label={t('reception.legendAppointments')}
+              sx={{ bgcolor: COLOR_APPOINTMENT, color: 'white', fontWeight: 600 }}
+            />
+            <Chip
+              size="small"
+              label={t('reception.legendMail')}
+              sx={{ bgcolor: COLOR_MAIL, color: 'white', fontWeight: 600 }}
+            />
+          </Box>
+          {canCreateAppointment && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreateAppointment}>
+              {t('reception.newAppointmentButton')}
+            </Button>
+          )}
         </Box>
+        {canCreateAppointment && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            {t('reception.calendarHoverCreateHint')}
+          </Typography>
+        )}
 
         {isLoading ? (
           <Box display="flex" justifyContent="center" alignItems="center" minHeight={400} flexDirection="column" gap={2}>
@@ -409,7 +491,14 @@ export default function AppointmentCalendarPanel() {
           </Box>
         ) : (
           <>
-            <Box sx={{ height: '100%', width: '100%' }}>
+            <Box
+              sx={{
+                height: '100%',
+                width: '100%',
+                '& .rbc-row-bg': { display: 'flex' },
+                '& .rbc-day-bg': { flex: 1 },
+              }}
+            >
               <Calendar
                 localizer={localizer}
                 events={events}
@@ -417,10 +506,14 @@ export default function AppointmentCalendarPanel() {
                 endAccessor="end"
                 style={{ height: '100%', minHeight: '550px' }}
                 onSelectEvent={(ev) => handleSelectEvent(ev as CalendarEvent)}
+                selectable={canCreateAppointment ? 'ignoreEvents' : false}
+                onSelectSlot={handleSelectCalendarSlot}
+                step={CALENDAR_SLOT_STEP_MINUTES}
                 defaultView="month"
                 views={['month', 'week', 'day', 'agenda']}
                 popup
                 eventPropGetter={(ev) => eventPropGetter(ev as CalendarEvent)}
+                components={calendarHoverComponents as Components<CalendarEvent>}
               />
             </Box>
             {events.length === 0 && (
@@ -583,7 +676,7 @@ export default function AppointmentCalendarPanel() {
                           border: 1,
                           borderColor: 'divider',
                           cursor: visitorIdDocUrl ? 'zoom-in' : 'default',
-                          bgcolor: 'grey.100',
+                          bgcolor: 'action.hover',
                         }}
                         onClick={() => visitorIdDocUrl && setVisitorIdDocZoomOpen(true)}
                         onKeyDown={(e) => {
@@ -750,6 +843,20 @@ export default function AppointmentCalendarPanel() {
         }
         title={t('appointments.visitorIdDocumentZoomTitle')}
         hint={t('appointments.visitorIdDocumentZoomHint')}
+      />
+
+      <CreateAppointmentDialog
+        key={
+          !createOpen
+            ? 'create-apt-closed'
+            : createInitialRange
+              ? `create-apt-${createInitialRange.start.getTime()}-${createInitialRange.end.getTime()}`
+              : 'create-apt-empty'
+        }
+        open={createOpen}
+        onClose={handleCloseCreateAppointment}
+        defaultHostUserId={user?.id}
+        initialRange={createInitialRange}
       />
     </>
   )

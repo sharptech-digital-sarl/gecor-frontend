@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Button,
@@ -37,9 +37,18 @@ type Props = {
   onClose: () => void
   /** Si présent dans la liste des hôtes, pré-remplit le sélecteur (ex. utilisateur connecté). */
   defaultHostUserId?: string
+  /** Créneau initial (ex. sélection sur le calendrier réception). `null` = horaires par défaut à l’ouverture. */
+  initialRange?: { start: string | Date; end: string | Date } | null
 }
 
-export default function CreateAppointmentDialog({ open, onClose, defaultHostUserId }: Props) {
+type LocationMode = 'on_site' | 'custom'
+
+export default function CreateAppointmentDialog({
+  open,
+  onClose,
+  defaultHostUserId,
+  initialRange = null,
+}: Props) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
@@ -60,6 +69,8 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
   const webcamStreamRef = useRef<MediaStream | null>(null)
   const [error, setError] = useState('')
   const [solicitedUserId, setSolicitedUserId] = useState('')
+  const [locationMode, setLocationMode] = useState<LocationMode>('on_site')
+  const [customLocation, setCustomLocation] = useState('')
 
   const {
     data: visitHosts,
@@ -83,6 +94,30 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
         : ''
     setSolicitedUserId(preferred)
   }, [open, visitHosts, defaultHostUserId])
+
+  /** Clé stable pour réagir au créneau calendrier même si la référence d’objet ne change pas. */
+  const initialRangeKey = useMemo(() => {
+    if (initialRange?.start == null || initialRange?.end == null) return ''
+    const a = dayjs(initialRange.start)
+    const b = dayjs(initialRange.end)
+    if (!a.isValid() || !b.isValid()) return ''
+    return `${a.valueOf()}-${b.valueOf()}`
+  }, [initialRange])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    if (initialRangeKey && initialRange?.start != null && initialRange?.end != null) {
+      const s = dayjs(initialRange.start)
+      const e = dayjs(initialRange.end)
+      if (s.isValid() && e.isValid() && e.isAfter(s)) {
+        setStartTime(s)
+        setEndTime(e)
+        return
+      }
+    }
+    setStartTime(dayjs().add(1, 'hour'))
+    setEndTime(dayjs().add(2, 'hour'))
+  }, [open, initialRangeKey, initialRange])
 
   const selectedHost = visitHosts?.find((h) => h.id === solicitedUserId)
 
@@ -173,6 +208,8 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
     setWebcamOpen(false)
     stopWebcamStream()
     setSolicitedUserId('')
+    setLocationMode('on_site')
+    setCustomLocation('')
     setError('')
     onClose()
   }
@@ -263,12 +300,19 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
       setError(t('appointments.solicitedPersonRequired'))
       return
     }
+    if (locationMode === 'custom' && !customLocation.trim()) {
+      setError(t('appointments.locationCustomRequired'))
+      return
+    }
+    const location =
+      locationMode === 'on_site' ? t('appointments.locationModeOnSite') : customLocation.trim()
     createMutation.mutate({
       title,
       description,
       start_time: startTime.toISOString(),
       end_time: endTime.toISOString(),
       organizer_id: solicitedUserId,
+      location,
       visitor_name: visitorName,
       visitor_email: visitorEmail,
       visitor_phone: visitorPhone,
@@ -387,6 +431,36 @@ export default function CreateAppointmentDialog({ open, onClose, defaultHostUser
                 minDateTime={startTime || undefined}
               />
             </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel id="create-apt-location-mode-label">{t('appointments.locationLabel')}</InputLabel>
+                <Select
+                  labelId="create-apt-location-mode-label"
+                  label={t('appointments.locationLabel')}
+                  value={locationMode}
+                  onChange={(e) => {
+                    const v = e.target.value as LocationMode
+                    setLocationMode(v)
+                    if (v === 'on_site') setCustomLocation('')
+                  }}
+                >
+                  <MenuItem value="on_site">{t('appointments.locationModeOnSite')}</MenuItem>
+                  <MenuItem value="custom">{t('appointments.locationModeSpecify')}</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {locationMode === 'custom' && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label={t('appointments.locationCustomLabel')}
+                  value={customLocation}
+                  onChange={(e) => setCustomLocation(e.target.value)}
+                  required
+                  placeholder={t('appointments.locationCustomPlaceholder')}
+                />
+              </Grid>
+            )}
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth

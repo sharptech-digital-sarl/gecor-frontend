@@ -4,12 +4,11 @@ import {
   Box,
   Button,
   Divider,
-  Drawer,
   IconButton,
   List,
   ListItemButton,
   ListItemText,
-  Toolbar,
+  Popover,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -18,6 +17,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import api from '../services/api'
 import { subscribePushWithApi } from '../utils/webPush'
+import { useAuth } from '../hooks/useAuth'
+import { useInAppNotificationSounds } from '../hooks/useInAppNotificationSounds'
+import { useDocumentVisible } from '../hooks/useDocumentVisible'
+import { useNotificationsSSE } from '../hooks/useNotificationsSSE'
 
 type InAppRow = {
   id: string
@@ -25,22 +28,41 @@ type InAppRow = {
   body: string
   read_at: string | null
   created_at: string
+  payload?: Record<string, unknown> | null
 }
 
 export default function NotificationBell() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const pushTried = useRef(false)
+  const open = Boolean(anchorEl)
+  const tabVisible = useDocumentVisible()
+  const sseConnected = useNotificationsSSE(Boolean(user?.id))
 
-  const { data: items = [] } = useQuery({
-    queryKey: ['in-app-notifications'],
+  /** SSE actif : filet de sécurité allégé (tâches Celery ne passent pas par le hub). Sinon polling court. */
+  const refetchIntervalMs = !tabVisible
+    ? 90_000
+    : sseConnected
+      ? 45_000
+      : open
+        ? 8_000
+        : 12_000
+
+  const { data: items = [], error } = useQuery({
+    queryKey: ['in-app-notifications', user?.id],
     queryFn: async () => {
       const { data } = await api.get<InAppRow[]>('/notifications', { params: { limit: 40 } })
-      return data
+      return Array.isArray(data) ? data : []
     },
-    refetchInterval: 60_000,
+    enabled: Boolean(user?.id),
+    refetchInterval: refetchIntervalMs,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   })
+
+  useInAppNotificationSounds(items, Boolean(user?.id))
 
   const unread = items.filter((n) => !n.read_at).length
 
@@ -64,28 +86,63 @@ export default function NotificationBell() {
     void subscribePushWithApi(api).catch(() => undefined)
   }, [])
 
+  useEffect(() => {
+    if (open && user?.id) {
+      void qc.invalidateQueries({ queryKey: ['in-app-notifications'] })
+    }
+  }, [open, user?.id, qc])
+
+  const handleBellClick = (e: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl((prev) => (prev ? null : e.currentTarget))
+  }
+
   return (
     <>
       <Tooltip title={t('notifications.tooltip')}>
-        <IconButton color="inherit" onClick={() => setOpen(true)} aria-label={t('notifications.tooltip')}>
+        <IconButton
+          color="inherit"
+          onClick={handleBellClick}
+          aria-label={t('notifications.tooltip')}
+          aria-expanded={open}
+        >
           <Badge badgeContent={unread} color="error" max={99} invisible={unread === 0}>
             <NotificationsNoneIcon />
           </Badge>
         </IconButton>
       </Tooltip>
-      <Drawer anchor="right" open={open} onClose={() => setOpen(false)}>
-        <Toolbar sx={{ px: 2, gap: 1, justifyContent: 'space-between' }}>
+      <Popover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{
+          paper: {
+            sx: {
+              width: 360,
+              maxWidth: 'calc(100vw - 24px)',
+              maxHeight: 'min(80vh, 520px)',
+              display: 'flex',
+              flexDirection: 'column',
+              mt: 1,
+            },
+          },
+        }}
+      >
+        <Box sx={{ px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
           <Typography variant="h6" component="span">
             {t('notifications.title')}
           </Typography>
           <Button size="small" onClick={() => readAll.mutate()} disabled={readAll.isPending || unread === 0}>
             {t('notifications.markAllRead')}
           </Button>
-        </Toolbar>
+        </Box>
         <Divider />
-        <Box sx={{ width: 360, maxWidth: '100vw' }}>
+        <Box sx={{ overflow: 'auto', flex: 1 }}>
           <List dense>
-            {items.length === 0 ? (
+            {error ? (
+              <ListItemText sx={{ px: 2, py: 2 }} primary={t('notifications.loadError')} />
+            ) : items.length === 0 ? (
               <ListItemText sx={{ px: 2, py: 2 }} primary={t('notifications.empty')} />
             ) : (
               items.map((n) => (
@@ -115,7 +172,7 @@ export default function NotificationBell() {
             )}
           </List>
         </Box>
-      </Drawer>
+      </Popover>
     </>
   )
 }

@@ -18,6 +18,7 @@ import {
   Tooltip,
   useTheme,
 } from '@mui/material'
+import { alpha } from '@mui/material/styles'
 import {
   Dashboard as DashboardIcon,
   Mail as MailIcon,
@@ -32,12 +33,13 @@ import {
   History as HistoryIcon,
   NotificationsActive as NotificationsActiveIcon,
   Article as ArticleIcon,
+  VpnKey as VpnKeyIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../hooks/useAuth'
-import { isAdminUser } from '../utils/roles'
-import { hasPermission } from '../utils/permissions'
-import Settings from './Settings'
+import ForcedPasswordChangeDialog from './ForcedPasswordChangeDialog'
+import { isAdminUser, isMasterUser } from '../utils/roles'
+import { canReviewDeletionRequests, hasPermission } from '../utils/permissions'
 import Logo from './Logo'
 import NotificationBell from './NotificationBell'
 
@@ -49,8 +51,7 @@ export default function Layout() {
   const theme = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, logout } = useAuth()
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const { user, logout, refreshUser } = useAuth()
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null)
   const [sidebarExpanded, setSidebarExpanded] = useState(true)
   const didMoveFocusToMain = useRef(false)
@@ -72,11 +73,20 @@ export default function Layout() {
     { text: t('navigation.mailManagement'), icon: <MailIcon />, path: '/app/mail' },
     { text: t('navigation.appointments'), icon: <CalendarIcon />, path: '/app/appointments' },
     { text: t('navigation.reception'), icon: <PeopleIcon />, path: '/app/reception' },
-    ...(hasPermission(user, 'deletion_requests.review')
+    ...(canReviewDeletionRequests(user)
       ? [{ text: t('navigation.deletionRequests'), icon: <GavelIcon />, path: '/app/deletion-requests' }]
       : []),
     ...(isAdminUser(user?.role)
       ? [{ text: t('navigation.users'), icon: <GroupsIcon />, path: '/app/users' }]
+      : []),
+    ...(isMasterUser(user?.role)
+      ? [
+          {
+            text: t('navigation.passwordResetRequests'),
+            icon: <VpnKeyIcon />,
+            path: '/app/admin/password-reset-requests',
+          },
+        ]
       : []),
     ...(hasPermission(user, 'admin.audit')
       ? [{ text: t('navigation.auditLog'), icon: <HistoryIcon />, path: '/app/admin/audit' }]
@@ -93,6 +103,7 @@ export default function Layout() {
     ...(hasPermission(user, 'content.public_posts')
       ? [{ text: t('navigation.publicPosts'), icon: <ArticleIcon />, path: '/app/admin/public-posts' }]
       : []),
+    { text: t('navigation.settings'), icon: <SettingsIcon />, path: '/app/settings' },
   ]
 
   const handleLogout = async () => {
@@ -205,7 +216,7 @@ export default function Layout() {
               <MenuItem
                 onClick={() => {
                   setUserMenuAnchor(null)
-                  setSettingsOpen(true)
+                  navigate('/app/settings')
                 }}
                 sx={{ py: 1.25, borderRadius: 1, mx: 0.5, my: 0.25 }}
               >
@@ -242,8 +253,9 @@ export default function Layout() {
             transition: drawerTransition,
             overflowX: 'hidden',
             boxSizing: 'border-box',
-            borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-            background: '#ffffff',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
             position: 'relative',
             zIndex: (theme) => theme.zIndex.drawer,
             whiteSpace: 'nowrap',
@@ -303,11 +315,11 @@ export default function Layout() {
                           transition: 'transform 0.2s ease',
                         },
                         '&.Mui-selected': {
-                          bgcolor: 'rgba(21, 101, 192, 0.08)',
+                          bgcolor: alpha(theme.palette.primary.main, 0.12),
                           color: 'primary.dark',
                           transform: sidebarExpanded ? `translateX(${shift})` : 'none',
                           '&:hover': {
-                            bgcolor: 'rgba(21, 101, 192, 0.12)',
+                            bgcolor: alpha(theme.palette.primary.main, 0.18),
                           },
                           '& .MuiListItemIcon-root': {
                             color: 'primary.main',
@@ -378,9 +390,10 @@ export default function Layout() {
           <Outlet />
         </Box>
       </Box>
-      {settingsOpen ? (
-        <Settings open onClose={() => setSettingsOpen(false)} />
-      ) : null}
+      <ForcedPasswordChangeDialog
+        open={Boolean(user?.password_must_change)}
+        onSuccess={() => refreshUser()}
+      />
     </Box>
   )
 }

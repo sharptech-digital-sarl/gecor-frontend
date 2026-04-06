@@ -12,14 +12,18 @@ import {
   CircularProgress,
   Tabs,
   Tab,
+  TableSortLabel,
 } from '@mui/material'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import api from '../services/api'
+import { useTableSort } from '../hooks/useTableSort'
 
 type InApp = {
   id: string
   user_id?: string
+  user_username?: string | null
+  user_email?: string | null
   title: string
   body: string
   read_at: string | null
@@ -33,6 +37,8 @@ type EmailN = {
   subject: string | null
   message: string
   recipient_email: string | null
+  recipient_id?: string | null
+  recipient_username?: string | null
   created_at: string
 }
 
@@ -44,6 +50,8 @@ type Overview = {
 export default function AdminSystemNotifications() {
   const { t } = useTranslation()
   const [tab, setTab] = useState(0)
+  const inAppSort = useTableSort<'time' | 'user' | 'title' | 'body' | 'read'>('time', 'desc')
+  const emailSort = useTableSort<'time' | 'status' | 'recipient' | 'subject'>('time', 'desc')
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-notifications-overview'],
@@ -51,6 +59,38 @@ export default function AdminSystemNotifications() {
       const { data: d } = await api.get<Overview>('/admin/notifications')
       return d
     },
+  })
+
+  const sortedInApp = inAppSort.sortRows(data?.in_app ?? [], (row, key) => {
+    switch (key) {
+      case 'time':
+        return new Date(row.created_at)
+      case 'user':
+        return `${row.user_username ?? ''} ${row.user_email ?? ''}`
+      case 'title':
+        return row.title
+      case 'body':
+        return row.body
+      case 'read':
+        return row.read_at ? 1 : 0
+      default:
+        return ''
+    }
+  })
+
+  const sortedEmail = emailSort.sortRows(data?.email_notifications ?? [], (row, key) => {
+    switch (key) {
+      case 'time':
+        return new Date(row.created_at)
+      case 'status':
+        return row.status
+      case 'recipient':
+        return `${row.recipient_username ?? ''} ${row.recipient_email ?? ''}`
+      case 'subject':
+        return row.subject ?? row.message.slice(0, 80)
+      default:
+        return ''
+    }
   })
 
   return (
@@ -73,18 +113,58 @@ export default function AdminSystemNotifications() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('adminNotifications.colTime')}</TableCell>
-                <TableCell>{t('adminNotifications.colUser')}</TableCell>
-                <TableCell>{t('adminNotifications.colTitle')}</TableCell>
-                <TableCell>{t('adminNotifications.colBody')}</TableCell>
-                <TableCell>{t('adminNotifications.colRead')}</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={inAppSort.sortBy === 'time'}
+                    direction={inAppSort.sortBy === 'time' ? inAppSort.sortDir : 'asc'}
+                    onClick={() => inAppSort.toggleSort('time')}
+                  >
+                    {t('adminNotifications.colTime')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={inAppSort.sortBy === 'user'}
+                    direction={inAppSort.sortBy === 'user' ? inAppSort.sortDir : 'asc'}
+                    onClick={() => inAppSort.toggleSort('user')}
+                  >
+                    {t('adminNotifications.colUser')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={inAppSort.sortBy === 'title'}
+                    direction={inAppSort.sortBy === 'title' ? inAppSort.sortDir : 'asc'}
+                    onClick={() => inAppSort.toggleSort('title')}
+                  >
+                    {t('adminNotifications.colTitle')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={inAppSort.sortBy === 'body'}
+                    direction={inAppSort.sortBy === 'body' ? inAppSort.sortDir : 'asc'}
+                    onClick={() => inAppSort.toggleSort('body')}
+                  >
+                    {t('adminNotifications.colBody')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={inAppSort.sortBy === 'read'}
+                    direction={inAppSort.sortBy === 'read' ? inAppSort.sortDir : 'asc'}
+                    onClick={() => inAppSort.toggleSort('read')}
+                  >
+                    {t('adminNotifications.colRead')}
+                  </TableSortLabel>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {(data?.in_app ?? []).map((row) => (
+              {sortedInApp.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{new Date(row.created_at).toLocaleString()}</TableCell>
-                  <TableCell>{row.user_id ?? '—'}</TableCell>
+                  <TableCell>{row.user_username ? `${row.user_username} (${row.user_email ?? '—'})` : '—'}</TableCell>
                   <TableCell>{row.title}</TableCell>
                   <TableCell sx={{ maxWidth: 280 }}>{row.body}</TableCell>
                   <TableCell>{row.read_at ? t('common.yes') : t('common.no')}</TableCell>
@@ -98,18 +178,50 @@ export default function AdminSystemNotifications() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('adminNotifications.colTime')}</TableCell>
-                <TableCell>{t('adminNotifications.colStatus')}</TableCell>
-                <TableCell>{t('adminNotifications.colRecipient')}</TableCell>
-                <TableCell>{t('adminNotifications.colSubject')}</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={emailSort.sortBy === 'time'}
+                    direction={emailSort.sortBy === 'time' ? emailSort.sortDir : 'asc'}
+                    onClick={() => emailSort.toggleSort('time')}
+                  >
+                    {t('adminNotifications.colTime')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={emailSort.sortBy === 'status'}
+                    direction={emailSort.sortBy === 'status' ? emailSort.sortDir : 'asc'}
+                    onClick={() => emailSort.toggleSort('status')}
+                  >
+                    {t('adminNotifications.colStatus')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={emailSort.sortBy === 'recipient'}
+                    direction={emailSort.sortBy === 'recipient' ? emailSort.sortDir : 'asc'}
+                    onClick={() => emailSort.toggleSort('recipient')}
+                  >
+                    {t('adminNotifications.colRecipient')}
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={emailSort.sortBy === 'subject'}
+                    direction={emailSort.sortBy === 'subject' ? emailSort.sortDir : 'asc'}
+                    onClick={() => emailSort.toggleSort('subject')}
+                  >
+                    {t('adminNotifications.colSubject')}
+                  </TableSortLabel>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {(data?.email_notifications ?? []).map((row) => (
+              {sortedEmail.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{new Date(row.created_at).toLocaleString()}</TableCell>
                   <TableCell>{row.status}</TableCell>
-                  <TableCell>{row.recipient_email ?? '—'}</TableCell>
+                  <TableCell>{row.recipient_username ? `${row.recipient_username} (${row.recipient_email ?? '—'})` : row.recipient_email ?? '—'}</TableCell>
                   <TableCell>{row.subject ?? row.message.slice(0, 80)}</TableCell>
                 </TableRow>
               ))}

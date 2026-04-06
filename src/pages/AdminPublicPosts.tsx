@@ -80,7 +80,8 @@ export default function AdminPublicPosts() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm(emptyForm)
+    const maxOrder = (data ?? []).reduce((m, p) => Math.max(m, p.sort_order ?? 0), -1)
+    setForm({ ...emptyForm, sort_order: maxOrder + 1 })
     setDialogOpen(true)
   }
 

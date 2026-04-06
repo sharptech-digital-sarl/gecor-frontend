@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Container,
   Paper,
@@ -11,6 +11,7 @@ import {
   Fade,
   Stack,
   Link,
+  Divider,
 } from '@mui/material'
 import {
   LockOutlined as LockIcon,
@@ -20,7 +21,9 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../hooks/useAuth'
 import { tokenService } from '../services/tokenService'
+import api from '../services/api'
 import Logo from '../components/Logo'
+import PasswordField from '../components/PasswordField'
 
 export default function Login() {
   const { t } = useTranslation()
@@ -33,6 +36,9 @@ export default function Login() {
   const [mfaSessionId, setMfaSessionId] = useState<string | null>(null)
   const { login, verifyMFA, isAuthenticated, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const googleOAuthHandled = useRef(false)
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -40,6 +46,66 @@ export default function Login() {
       navigate('/app')
     }
   }, [isAuthenticated, authLoading, navigate])
+
+  // Retour OAuth Google (connexion sans MFA) : cookie refresh + jeton d'accès
+  useEffect(() => {
+    if (searchParams.get('google_auth') !== '1') return
+    if (googleOAuthHandled.current) return
+    if (sessionStorage.getItem('fpiconnect_google_auth_lock')) return
+    googleOAuthHandled.current = true
+    sessionStorage.setItem('fpiconnect_google_auth_lock', '1')
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await api.post<{ access_token?: string; refresh_token?: string }>('/auth/refresh', {})
+        if (cancelled) return
+        if (data?.access_token) {
+          if (data.refresh_token) {
+            tokenService.setTokens(data.access_token, data.refresh_token)
+          } else {
+            tokenService.setAccessToken(data.access_token)
+          }
+          setSearchParams({}, { replace: true })
+          sessionStorage.removeItem('fpiconnect_google_auth_lock')
+          window.location.assign(`${window.location.origin}/app`)
+          return
+        }
+        sessionStorage.removeItem('fpiconnect_google_auth_lock')
+        setError('auth.googleLoginOauthFailed')
+      } catch {
+        sessionStorage.removeItem('fpiconnect_google_auth_lock')
+        if (!cancelled) setError('auth.googleLoginOauthFailed')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, setSearchParams])
+
+  // Retour OAuth Google avec MFA : afficher l'étape code
+  useEffect(() => {
+    if (searchParams.get('google_mfa') !== '1') return
+    const sid = searchParams.get('mfa_session_id')
+    if (!sid) return
+    setRequiresMFA(true)
+    setMfaSessionId(sid)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  // Erreurs renvoyées par le callback Google
+  useEffect(() => {
+    const code = searchParams.get('google_login_error')
+    if (!code) return
+    const map: Record<string, string> = {
+      no_account: 'auth.googleLoginNoAccount',
+      inactive: 'auth.googleLoginInactive',
+      mfa_policy: 'auth.googleLoginMfaPolicy',
+      oauth_failed: 'auth.googleLoginOauthFailed',
+      oauth_denied: 'auth.googleLoginOauthDenied',
+    }
+    setError(map[code] || 'auth.googleLoginOauthFailed')
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -126,6 +192,24 @@ export default function Login() {
     setError('')
   }
 
+  const handleGoogleLogin = async () => {
+    setError('')
+    setGoogleLoading(true)
+    try {
+      const response = await api.get<{ auth_url?: string }>('/auth/google/login/start', {
+        params: { next_path: '/app' },
+      })
+      const url = response.data?.auth_url
+      if (!url) throw new Error('Missing OAuth URL')
+      window.location.href = url
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } }; message?: string }
+      setError(ax.response?.data?.detail || ax.message || 'auth.googleLoginOauthFailed')
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -192,7 +276,7 @@ export default function Login() {
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+              {error.startsWith('auth.') ? t(error) : error}
             </Alert>
           )}
 
@@ -216,15 +300,15 @@ export default function Login() {
                       ),
                     }}
                   />
-                  <TextField
+                  <PasswordField
                     required
                     fullWidth
                     label={t('auth.password')}
-                    type="password"
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
+                    showStrengthMeter
                     InputProps={{
                       startAdornment: (
                         <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
@@ -233,6 +317,11 @@ export default function Login() {
                       ),
                     }}
                   />
+                  <Box sx={{ textAlign: 'right', mt: -1 }}>
+                    <Link component={RouterLink} to="/forgot-password" variant="body2" underline="hover">
+                      {t('auth.forgotPassword')}
+                    </Link>
+                  </Box>
                   <Button
                     type="submit"
                     fullWidth
@@ -240,9 +329,27 @@ export default function Login() {
                     color="primary"
                     size="large"
                     sx={{ mt: 2, py: 1.5 }}
-                    disabled={loading}
+                    disabled={loading || googleLoading}
                   >
                     {loading ? t('auth.signingIn') : t('auth.login')}
+                  </Button>
+                  <Divider sx={{ my: 1 }}>{t('auth.orContinueWith')}</Divider>
+                  <Button
+                    type="button"
+                    fullWidth
+                    variant="outlined"
+                    color="inherit"
+                    size="large"
+                    sx={{
+                      py: 1.5,
+                      borderColor: 'divider',
+                      color: 'text.primary',
+                      '&:hover': { borderColor: 'text.secondary', bgcolor: 'action.hover' },
+                    }}
+                    disabled={loading || googleLoading}
+                    onClick={handleGoogleLogin}
+                  >
+                    {googleLoading ? t('auth.googleRedirecting') : t('auth.continueWithGoogle')}
                   </Button>
                 </Stack>
               </Box>

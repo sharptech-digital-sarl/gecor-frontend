@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
@@ -26,6 +26,12 @@ import {
   Snackbar,
   FormControlLabel,
   Checkbox,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  InputAdornment,
+  Grid,
 } from '@mui/material'
 import { useTheme, alpha } from '@mui/material/styles'
 import {
@@ -39,6 +45,10 @@ import {
   TaskAlt as TaskAltIcon,
   PersonOff as PersonOffIcon,
   QrCodeScanner as QrCodeScannerIcon,
+  Inventory2 as Inventory2Icon,
+  DeleteForever as DeleteForeverIcon,
+  Search as SearchIcon,
+  FilterAltOff as FilterAltOffIcon,
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
@@ -49,6 +59,7 @@ import api from '../services/api'
 import CreateAppointmentDialog from '../components/appointments/CreateAppointmentDialog'
 import VisitorPhotoZoomDialog from '../components/appointments/VisitorPhotoZoomDialog'
 import { hasPermission } from '../utils/permissions'
+import { isAdminUser, isMasterOrDirector } from '../utils/roles'
 import { Html5Qrcode } from 'html5-qrcode'
 import {
   computeCheckInPunctualityFromTimes,
@@ -88,13 +99,44 @@ type AptRow = {
     visitor_id_document_path?: string | null
   }
   has_pending_deletion_request?: boolean
+  archived_at?: string | null
   booking_source?: string
   internal_notes?: string | null
   reception_validated_at?: string | null
   visitor_booking_email_sent_at?: string | null
+  highlight_destined?: boolean
 }
 
 type SortKey = 'start_time' | 'visitor_name' | 'visitor_company' | 'organizer' | 'status'
+
+/** Aligné sur le backend : vue liste complète du service (pas analyst / admin / invité). */
+const APPOINTMENT_BROAD_LIST_ROLES = new Set(['master', 'director', 'receptionist', 'secretary'])
+
+const APPOINTMENT_STATUS_FILTER_VALUES = [
+  '',
+  'pending',
+  'slot_proposed',
+  'pending_authorization',
+  'preparation',
+  'confirmed',
+  'cancelled',
+  'completed',
+  'no_show',
+] as const
+
+function localYmdToStartIso(ymd: string): string | undefined {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return undefined
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString()
+}
+
+function localYmdToEndIso(ymd: string): string | undefined {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return undefined
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString()
+}
+
+type VisitHostFilterOption = { id: string; full_name: string; username: string }
 
 export default function Appointments() {
   const { t } = useTranslation()
@@ -155,20 +197,115 @@ export default function Appointments() {
     return { bgcolor: bg }
   }
 
+  const appointmentTableRowSx = (apt: AptRow) => (tt: typeof theme) => {
+    const punctual = checkInRowSx(apt)
+    if (!apt.highlight_destined) {
+      return punctual ?? {}
+    }
+    return {
+      ...(punctual ?? {}),
+      boxShadow: `inset 4px 0 0 ${tt.palette.warning.main}`,
+      ...(!punctual
+        ? {
+            bgcolor: alpha(tt.palette.warning.main, tt.palette.mode === 'dark' ? 0.12 : 0.1),
+          }
+        : {}),
+    }
+  }
+
   const canUpdateApt = hasPermission(user, 'appointments.update')
 
   const canCreate = hasPermission(user, 'appointments.create')
   const canCheckIn = hasPermission(user, 'reception.checkin')
   const canDeleteApt = hasPermission(user, 'appointments.delete')
   const canRequestCancel = hasPermission(user, 'appointments.request_delete')
+  const canBulkOps = isAdminUser(user?.role) && canDeleteApt
+  const canExecutivePurge = isMasterOrDirector(user?.role) && canDeleteApt
+  const showSelectionColumn = canBulkOps || canExecutivePurge
+  const [selectedAptIds, setSelectedAptIds] = useState<string[]>([])
+  const [includeArchived, setIncludeArchived] = useState(false)
+
+  const aptBroadAccess =
+    user?.role != null && APPOINTMENT_BROAD_LIST_ROLES.has(String(user.role).toLowerCase())
+
+  const [filterSearchInput, setFilterSearchInput] = useState('')
+  const [filterSearchDebounced, setFilterSearchDebounced] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setFilterSearchDebounced(filterSearchInput.trim()), 400)
+    return () => window.clearTimeout(t)
+  }, [filterSearchInput])
+
+  const [filterStatus, setFilterStatus] = useState<string>('')
+  const [filterOrganizerId, setFilterOrganizerId] = useState<string>('')
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('')
+  const [filterDateTo, setFilterDateTo] = useState<string>('')
+  const [filterBookingSource, setFilterBookingSource] = useState<string>('')
+  const [filterCheckedIn, setFilterCheckedIn] = useState<string>('')
+  const [filterReceptionValidated, setFilterReceptionValidated] = useState<string>('')
+  const [filterPendingCancellation, setFilterPendingCancellation] = useState(false)
+
+  const { data: visitHostFilterOptions = [] } = useQuery({
+    queryKey: ['appointments-filter-hosts'],
+    enabled: aptBroadAccess,
+    queryFn: async () => {
+      const { data } = await api.get<VisitHostFilterOption[]>('/users/visit-host-candidates')
+      return data || []
+    },
+  })
+
+  const listQueryParams = useMemo(() => {
+    const params: Record<string, string | boolean | number> = { limit: 800 }
+    if (includeArchived) params.include_archived = true
+    if (filterSearchDebounced) params.search = filterSearchDebounced
+    if (filterStatus) params.status = filterStatus
+    if (aptBroadAccess && filterOrganizerId) params.organizer_id = filterOrganizerId
+    const sd = localYmdToStartIso(filterDateFrom)
+    const ed = localYmdToEndIso(filterDateTo)
+    if (sd) params.start_date = sd
+    if (ed) params.end_date = ed
+    if (filterBookingSource === 'internal' || filterBookingSource === 'public') {
+      params.booking_source = filterBookingSource
+    }
+    if (filterCheckedIn === 'yes') params.checked_in = true
+    if (filterCheckedIn === 'no') params.checked_in = false
+    if (filterReceptionValidated === 'yes') params.reception_validated = true
+    if (filterReceptionValidated === 'no') params.reception_validated = false
+    if (filterPendingCancellation) params.pending_cancellation_only = true
+    return params
+  }, [
+    includeArchived,
+    filterSearchDebounced,
+    filterStatus,
+    filterOrganizerId,
+    aptBroadAccess,
+    filterDateFrom,
+    filterDateTo,
+    filterBookingSource,
+    filterCheckedIn,
+    filterReceptionValidated,
+    filterPendingCancellation,
+  ])
 
   const { data: appointments, isLoading, error } = useQuery({
-    queryKey: ['appointments-list'],
+    queryKey: ['appointments-list', listQueryParams],
     queryFn: async () => {
-      const response = await api.get('/appointments/', { params: { limit: 500 } })
+      const response = await api.get('/appointments/', { params: listQueryParams })
       return (response.data || []) as AptRow[]
     },
   })
+
+  const resetListFilters = useCallback(() => {
+    setFilterSearchInput('')
+    setFilterSearchDebounced('')
+    setFilterStatus('')
+    setFilterOrganizerId('')
+    setFilterDateFrom('')
+    setFilterDateTo('')
+    setFilterBookingSource('')
+    setFilterCheckedIn('')
+    setFilterReceptionValidated('')
+    setFilterPendingCancellation(false)
+  }, [])
 
   const checkInMutation = useMutation({
     mutationFn: async (appointmentId: string) => {
@@ -287,6 +424,142 @@ export default function Appointments() {
     },
   })
 
+  const bulkCancelAptMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data } = await api.post<{ deleted_count: number }>('/appointments/bulk-delete', { ids })
+      return data
+    },
+    onSuccess: (data) => {
+      setSelectedAptIds([])
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      const n = data?.deleted_count ?? 0
+      setActionMessage({
+        type: 'success',
+        text: t('appointments.bulkCancelSuccess', { count: n }),
+      })
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      setActionMessage({
+        type: 'error',
+        text:
+          (typeof detail === 'string' ? detail : '') ||
+          t('appointments.bulkCancelFailed'),
+      })
+    },
+  })
+
+  const bulkArchiveAptMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data } = await api.post<{ archived_count: number }>('/appointments/bulk-archive', { ids })
+      return data
+    },
+    onSuccess: (data) => {
+      setSelectedAptIds([])
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      const n = data?.archived_count ?? 0
+      setActionMessage({
+        type: 'success',
+        text: t('appointments.bulkArchiveSuccess', { count: n }),
+      })
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      setActionMessage({
+        type: 'error',
+        text:
+          (typeof detail === 'string' ? detail : '') ||
+          t('appointments.bulkArchiveFailed'),
+      })
+    },
+  })
+
+  const archiveSingleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.post<AptRow>(`/appointments/${id}/archive`)
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      setActionMessage({ type: 'success', text: t('appointments.archiveSuccess') })
+      if (selectedAppointment?.id === data.id) {
+        setSelectedAppointment(data as AptRow)
+      }
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      setActionMessage({
+        type: 'error',
+        text: (typeof detail === 'string' ? detail : '') || t('appointments.archiveFailed'),
+      })
+    },
+  })
+
+  const bulkPermanentAptMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data } = await api.post<{ deleted_count: number }>('/appointments/bulk-permanent-delete', {
+        ids,
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      setSelectedAptIds([])
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      const n = data?.deleted_count ?? 0
+      setActionMessage({
+        type: 'success',
+        text: t('appointments.bulkPermanentSuccess', { count: n }),
+      })
+      setViewOpen(false)
+      setSelectedAppointment(null)
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      setActionMessage({
+        type: 'error',
+        text:
+          (typeof detail === 'string' ? detail : '') ||
+          t('appointments.bulkPermanentFailed'),
+      })
+    },
+  })
+
+  const permanentSingleMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/appointments/${id}/permanent`)
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
+      setActionMessage({ type: 'success', text: t('appointments.permanentDeleteSuccess') })
+      if (selectedAppointment?.id === id) {
+        setViewOpen(false)
+        setSelectedAppointment(null)
+      }
+    },
+    onError: (err: unknown) => {
+      const detail = axiosErrorDetail(err)
+      setActionMessage({
+        type: 'error',
+        text: (typeof detail === 'string' ? detail : '') || t('appointments.permanentDeleteFailed'),
+      })
+    },
+  })
+
   const cancelMutation = useMutation({
     mutationFn: async (appointmentId: string) => {
       const response = await api.post(`/appointments/${appointmentId}/cancel`)
@@ -296,6 +569,7 @@ export default function Appointments() {
       queryClient.invalidateQueries({ queryKey: ['appointments-list'] })
       queryClient.invalidateQueries({ queryKey: ['appointments'] })
       queryClient.invalidateQueries({ queryKey: ['reception-appointments'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-kpi'] })
       setCancelConfirmOpen(false)
       setViewOpen(false)
       setSelectedAppointment(null)
@@ -420,6 +694,12 @@ export default function Appointments() {
     switch (status) {
       case 'pending':
         return t('appointments.statusPending')
+      case 'slot_proposed':
+        return t('appointments.statusSlotProposed')
+      case 'pending_authorization':
+        return t('appointments.statusPendingAuthorization')
+      case 'preparation':
+        return t('appointments.statusPreparation')
       case 'confirmed':
         return t('appointments.statusConfirmed')
       case 'cancelled':
@@ -449,6 +729,73 @@ export default function Appointments() {
 
   const canCancelAppointmentDirect = (apt: AptRow) =>
     isVisitHost(apt) || canDeleteApt
+
+  const bulkSelectableAptIds = useMemo(
+    () =>
+      canExecutivePurge
+        ? sorted.map((apt) => apt.id)
+        : sorted.filter((apt) => !apt.archived_at).map((apt) => apt.id),
+    [sorted, canExecutivePurge]
+  )
+
+  const cancellableAptIds = useMemo(
+    () =>
+      sorted
+        .filter(
+          (apt) =>
+            !apt.archived_at &&
+            apt.status !== 'cancelled' &&
+            apt.status !== 'completed' &&
+            apt.status !== 'no_show' &&
+            canCancelAppointmentDirect(apt)
+        )
+        .map((apt) => apt.id),
+    [sorted, user, canDeleteApt]
+  )
+
+  useEffect(() => {
+    setSelectedAptIds((prev) => prev.filter((id) => bulkSelectableAptIds.includes(id)))
+  }, [bulkSelectableAptIds])
+
+  const toggleAptRow = useCallback(
+    (id: string) => {
+      if (!bulkSelectableAptIds.includes(id)) return
+      setSelectedAptIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    },
+    [bulkSelectableAptIds]
+  )
+
+  const selectAllAptRows = useCallback(() => {
+    setSelectedAptIds((prev) =>
+      prev.length === bulkSelectableAptIds.length ? [] : [...bulkSelectableAptIds]
+    )
+  }, [bulkSelectableAptIds])
+
+  const bulkCancelSelectionEnabled =
+    selectedAptIds.length > 0 && selectedAptIds.every((id) => cancellableAptIds.includes(id))
+
+  const bulkOpsPending =
+    bulkCancelAptMutation.isPending ||
+    bulkArchiveAptMutation.isPending ||
+    bulkPermanentAptMutation.isPending
+
+  const handleBulkCancelApt = () => {
+    if (!bulkCancelSelectionEnabled) return
+    if (!window.confirm(t('appointments.bulkCancelConfirm', { count: selectedAptIds.length }))) return
+    bulkCancelAptMutation.mutate(selectedAptIds)
+  }
+
+  const handleBulkArchiveApt = () => {
+    if (!selectedAptIds.length) return
+    if (!window.confirm(t('appointments.bulkArchiveConfirm', { count: selectedAptIds.length }))) return
+    bulkArchiveAptMutation.mutate(selectedAptIds)
+  }
+
+  const handleBulkPermanentApt = () => {
+    if (!selectedAptIds.length || !canExecutivePurge) return
+    if (!window.confirm(t('appointments.bulkPermanentConfirm', { count: selectedAptIds.length }))) return
+    bulkPermanentAptMutation.mutate(selectedAptIds)
+  }
 
   useEffect(() => {
     const revokeCurrent = () => {
@@ -650,17 +997,71 @@ export default function Appointments() {
             {t('appointments.listSubtitle')}
           </Typography>
         </Box>
-        {canCreate && (
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={() => setCreateOpen(true)}
-            sx={{ minWidth: 180 }}
-          >
-            {t('appointments.newAppointment')}
-          </Button>
-        )}
+        <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+          {canCreate && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<AddIcon />}
+              onClick={() => setCreateOpen(true)}
+              sx={{ minWidth: 180 }}
+            >
+              {t('appointments.newAppointment')}
+            </Button>
+          )}
+          {canBulkOps && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={includeArchived}
+                  onChange={(e) => setIncludeArchived(e.target.checked)}
+                />
+              }
+              label={t('appointments.showArchivedToggle')}
+              sx={{ mr: 0, ml: 0 }}
+            />
+          )}
+          {canBulkOps && (
+            <>
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteOutlineIcon />}
+                disabled={!bulkCancelSelectionEnabled || bulkOpsPending}
+                onClick={handleBulkCancelApt}
+              >
+                {bulkCancelAptMutation.isPending
+                  ? t('common.loading')
+                  : t('appointments.bulkCancelSelected', { count: selectedAptIds.length })}
+              </Button>
+              <Button
+                variant="outlined"
+                color="secondary"
+                startIcon={<Inventory2Icon />}
+                disabled={!selectedAptIds.length || bulkOpsPending}
+                onClick={handleBulkArchiveApt}
+              >
+                {bulkArchiveAptMutation.isPending
+                  ? t('common.loading')
+                  : t('appointments.bulkArchiveSelected', { count: selectedAptIds.length })}
+              </Button>
+              {canExecutivePurge && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteForeverIcon />}
+                  disabled={!selectedAptIds.length || bulkOpsPending}
+                  onClick={handleBulkPermanentApt}
+                >
+                  {bulkPermanentAptMutation.isPending
+                    ? t('common.loading')
+                    : t('appointments.bulkPermanentSelected', { count: selectedAptIds.length })}
+                </Button>
+              )}
+            </>
+          )}
+        </Box>
       </Box>
 
       {actionMessage && (
@@ -721,10 +1122,247 @@ export default function Appointments() {
         </Paper>
       )}
 
+      <Paper
+        elevation={0}
+        sx={{
+          mb: 2,
+          p: 2,
+          borderRadius: 3,
+          border: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} mb={2}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            {t('appointments.filtersTitle')}
+          </Typography>
+          <Button
+            size="small"
+            startIcon={<FilterAltOffIcon />}
+            onClick={resetListFilters}
+            disabled={
+              !filterSearchInput &&
+              !filterStatus &&
+              !filterOrganizerId &&
+              !filterDateFrom &&
+              !filterDateTo &&
+              !filterBookingSource &&
+              !filterCheckedIn &&
+              !filterReceptionValidated &&
+              !filterPendingCancellation
+            }
+          >
+            {t('appointments.filtersReset')}
+          </Button>
+        </Box>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6} lg={4}>
+            <TextField
+              fullWidth
+              size="small"
+              label={t('appointments.filterSearch')}
+              placeholder={t('appointments.filterSearchPlaceholder')}
+              value={filterSearchInput}
+              onChange={(e) => setFilterSearchInput(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="apt-filter-status">{t('appointments.filterStatus')}</InputLabel>
+              <Select
+                labelId="apt-filter-status"
+                label={t('appointments.filterStatus')}
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <MenuItem value="">{t('appointments.filterAny')}</MenuItem>
+                {APPOINTMENT_STATUS_FILTER_VALUES.filter(Boolean).map((s) => (
+                  <MenuItem key={s} value={s}>
+                    {statusLabel(s)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          {aptBroadAccess && (
+            <Grid item xs={12} sm={6} md={4} lg={3}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="apt-filter-host">{t('appointments.filterHost')}</InputLabel>
+                <Select
+                  labelId="apt-filter-host"
+                  label={t('appointments.filterHost')}
+                  value={filterOrganizerId}
+                  onChange={(e) => setFilterOrganizerId(e.target.value)}
+                >
+                  <MenuItem value="">{t('appointments.filterAny')}</MenuItem>
+                  {visitHostFilterOptions.map((h) => (
+                    <MenuItem key={h.id} value={h.id}>
+                      {h.full_name || h.username}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          )}
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <TextField
+              fullWidth
+              size="small"
+              type="date"
+              label={t('appointments.filterDateFrom')}
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <TextField
+              fullWidth
+              size="small"
+              type="date"
+              label={t('appointments.filterDateTo')}
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="apt-filter-booking">{t('appointments.filterBookingSource')}</InputLabel>
+              <Select
+                labelId="apt-filter-booking"
+                label={t('appointments.filterBookingSource')}
+                value={filterBookingSource}
+                onChange={(e) => setFilterBookingSource(e.target.value)}
+              >
+                <MenuItem value="">{t('appointments.filterAny')}</MenuItem>
+                <MenuItem value="internal">{t('appointments.bookingInternal')}</MenuItem>
+                <MenuItem value="public">{t('appointments.bookingPublic')}</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="apt-filter-checkin">{t('appointments.filterCheckedIn')}</InputLabel>
+              <Select
+                labelId="apt-filter-checkin"
+                label={t('appointments.filterCheckedIn')}
+                value={filterCheckedIn}
+                onChange={(e) => setFilterCheckedIn(e.target.value)}
+              >
+                <MenuItem value="">{t('appointments.filterAny')}</MenuItem>
+                <MenuItem value="yes">{t('common.yes')}</MenuItem>
+                <MenuItem value="no">{t('common.no')}</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="apt-filter-reception">{t('appointments.filterReceptionValidated')}</InputLabel>
+              <Select
+                labelId="apt-filter-reception"
+                label={t('appointments.filterReceptionValidated')}
+                value={filterReceptionValidated}
+                onChange={(e) => setFilterReceptionValidated(e.target.value)}
+              >
+                <MenuItem value="">{t('appointments.filterAny')}</MenuItem>
+                <MenuItem value="yes">{t('common.yes')}</MenuItem>
+                <MenuItem value="no">{t('common.no')}</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4} lg={3}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={filterPendingCancellation}
+                  onChange={(e) => setFilterPendingCancellation(e.target.checked)}
+                />
+              }
+              label={t('appointments.filterPendingCancellation')}
+            />
+          </Grid>
+        </Grid>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          {t('appointments.filtersResultHint')}
+        </Typography>
+      </Paper>
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error instanceof Error ? error.message : t('appointments.loadFailed')}
         </Alert>
+      )}
+
+      {(canBulkOps || canExecutivePurge) && selectedAptIds.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 2,
+            p: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 1.5,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 2,
+            bgcolor: 'action.hover',
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            {t('appointments.bulkSelectionCount', { count: selectedAptIds.length })}
+          </Typography>
+          <Box display="flex" gap={1} flexWrap="wrap">
+            <Button
+              variant="contained"
+              color="error"
+              size="medium"
+              startIcon={<DeleteOutlineIcon />}
+              disabled={!bulkCancelSelectionEnabled || bulkOpsPending}
+              onClick={handleBulkCancelApt}
+            >
+              {bulkCancelAptMutation.isPending
+                ? t('common.loading')
+                : t('appointments.bulkCancelSelected', { count: selectedAptIds.length })}
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              size="medium"
+              startIcon={<Inventory2Icon />}
+              disabled={bulkOpsPending}
+              onClick={handleBulkArchiveApt}
+            >
+              {bulkArchiveAptMutation.isPending
+                ? t('common.loading')
+                : t('appointments.bulkArchiveSelected', { count: selectedAptIds.length })}
+            </Button>
+            {canExecutivePurge && (
+              <Button
+                variant="contained"
+                color="error"
+                size="medium"
+                startIcon={<DeleteForeverIcon />}
+                disabled={bulkOpsPending}
+                onClick={handleBulkPermanentApt}
+              >
+                {bulkPermanentAptMutation.isPending
+                  ? t('common.loading')
+                  : t('appointments.bulkPermanentSelected', { count: selectedAptIds.length })}
+              </Button>
+            )}
+          </Box>
+        </Paper>
       )}
 
       <TableContainer
@@ -738,14 +1376,24 @@ export default function Appointments() {
       >
         <Table stickyHeader>
           <TableHead>
-            <TableRow
-              sx={{
-                '& .MuiTableCell-head': {
-                  fontWeight: 700,
-                  bgcolor: 'grey.100',
-                },
-              }}
-            >
+            <TableRow>
+              {showSelectionColumn && (
+                <TableCell padding="checkbox" sx={{ width: 48 }}>
+                  <Checkbox
+                    size="small"
+                    indeterminate={
+                      selectedAptIds.length > 0 &&
+                      selectedAptIds.length < bulkSelectableAptIds.length
+                    }
+                    checked={
+                      bulkSelectableAptIds.length > 0 &&
+                      selectedAptIds.length === bulkSelectableAptIds.length
+                    }
+                    onChange={selectAllAptRows}
+                    inputProps={{ 'aria-label': t('appointments.bulkSelectAllAria') }}
+                  />
+                </TableCell>
+              )}
               <TableCell>
                 <TableSortLabel
                   active={sortBy === 'start_time'}
@@ -797,21 +1445,45 @@ export default function Appointments() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={showSelectionColumn ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <CircularProgress />
                 </TableCell>
               </TableRow>
             ) : !sorted.length ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={showSelectionColumn ? 7 : 6} align="center" sx={{ py: 4 }}>
                   <Typography color="text.secondary">{t('appointments.noAppointments')}</Typography>
                 </TableCell>
               </TableRow>
             ) : (
               sorted.map((apt) => {
-                const showCheckIn = isSameLocalDay(apt.start_time) && !apt.visitor?.checked_in
+                const showCheckIn =
+                  isSameLocalDay(apt.start_time) &&
+                  !apt.visitor?.checked_in &&
+                  !apt.archived_at
+                const aptSelectable = bulkSelectableAptIds.includes(apt.id)
                 return (
-                  <TableRow key={apt.id} hover sx={checkInRowSx(apt)}>
+                  <TableRow
+                    key={apt.id}
+                    hover
+                    selected={showSelectionColumn && selectedAptIds.includes(apt.id)}
+                    sx={appointmentTableRowSx(apt)}
+                  >
+                    {showSelectionColumn && (
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          size="small"
+                          disabled={!aptSelectable}
+                          checked={selectedAptIds.includes(apt.id)}
+                          onChange={() => toggleAptRow(apt.id)}
+                          inputProps={{
+                            'aria-label': t('appointments.bulkSelectRowAria', {
+                              name: apt.visitor_name || apt.title || apt.id,
+                            }),
+                          }}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Typography variant="body2">
                         {formatTime(apt.start_time)} – {formatTime(apt.end_time)}
@@ -844,10 +1516,13 @@ export default function Appointments() {
                         {apt.booking_source === 'public' && (
                           <Chip label={t('appointments.publicBookingBadge')} size="small" color="info" variant="outlined" />
                         )}
+                        {apt.archived_at && (
+                          <Chip label={t('appointments.archivedBadge')} size="small" color="default" />
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Box display="flex" gap={1} flexWrap="wrap">
+                      <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
                         <Button
                           size="small"
                           variant="outlined"
@@ -859,6 +1534,38 @@ export default function Appointments() {
                         >
                           {t('common.view')}
                         </Button>
+                        {canBulkOps && !apt.archived_at && (
+                          <Tooltip title={t('appointments.archiveAppointment')}>
+                            <IconButton
+                              size="small"
+                              color="secondary"
+                              aria-label={t('appointments.archiveAppointment')}
+                              disabled={archiveSingleMutation.isPending}
+                              onClick={() => {
+                                if (!window.confirm(t('appointments.archiveOneConfirm'))) return
+                                archiveSingleMutation.mutate(apt.id)
+                              }}
+                            >
+                              <Inventory2Icon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {canExecutivePurge && (
+                          <Tooltip title={t('appointments.permanentDelete')}>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              aria-label={t('appointments.permanentDelete')}
+                              disabled={permanentSingleMutation.isPending}
+                              onClick={() => {
+                                if (!window.confirm(t('appointments.permanentDeleteOneConfirm'))) return
+                                permanentSingleMutation.mutate(apt.id)
+                              }}
+                            >
+                              <DeleteForeverIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         {showCheckIn && canCheckIn && (
                           <Button
                             size="small"
@@ -1070,7 +1777,7 @@ export default function Appointments() {
                           border: 1,
                           borderColor: 'divider',
                           cursor: visitorIdDocUrl && !visitorIdDocLoading ? 'zoom-in' : 'default',
-                          bgcolor: 'grey.100',
+                          bgcolor: 'action.hover',
                         }}
                         onClick={() => {
                           if (visitorIdDocUrl && !visitorIdDocLoading) setVisitorIdDocZoomOpen(true)
@@ -1153,7 +1860,12 @@ export default function Appointments() {
                   {t('appointments.pendingCancellationNotice')}
                 </Alert>
               )}
-              {canUpdateApt && (
+              {selectedAppointment.archived_at && (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  {t('appointments.archivedDetailNotice')}
+                </Alert>
+              )}
+              {canUpdateApt && !selectedAppointment.archived_at && (
                 <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
                     {t('appointments.internalNotesLabel')}
@@ -1244,6 +1956,7 @@ export default function Appointments() {
               </Button>
             )}
           {selectedAppointment &&
+            !selectedAppointment.archived_at &&
             selectedAppointment.status === 'confirmed' &&
             canCompleteAppointment(selectedAppointment) && (
               <Button
@@ -1257,6 +1970,7 @@ export default function Appointments() {
               </Button>
             )}
           {selectedAppointment &&
+            !selectedAppointment.archived_at &&
             selectedAppointment.status === 'confirmed' &&
             canCompleteAppointment(selectedAppointment) && (
               <Button
@@ -1270,6 +1984,7 @@ export default function Appointments() {
               </Button>
             )}
           {selectedAppointment &&
+            !selectedAppointment.archived_at &&
             selectedAppointment.status !== 'cancelled' &&
             selectedAppointment.status !== 'completed' &&
             selectedAppointment.status !== 'no_show' &&
@@ -1283,6 +1998,7 @@ export default function Appointments() {
               </Button>
             )}
           {selectedAppointment &&
+            !selectedAppointment.archived_at &&
             selectedAppointment.status !== 'cancelled' &&
             selectedAppointment.status !== 'completed' &&
             selectedAppointment.status !== 'no_show' &&
@@ -1299,6 +2015,7 @@ export default function Appointments() {
               </Button>
             )}
           {selectedAppointment &&
+            !selectedAppointment.archived_at &&
             isSameLocalDay(selectedAppointment.start_time) &&
             !selectedAppointment.visitor?.checked_in &&
             canCheckIn && (
@@ -1313,6 +2030,36 @@ export default function Appointments() {
               >
                 {t('appointments.checkInDetailLabel')}
               </Button>
+            )}
+          {selectedAppointment && canBulkOps && !selectedAppointment.archived_at && (
+            <Button
+              color="secondary"
+              variant="outlined"
+              startIcon={<Inventory2Icon />}
+              disabled={archiveSingleMutation.isPending}
+              onClick={() => {
+                if (!window.confirm(t('appointments.archiveOneConfirm'))) return
+                archiveSingleMutation.mutate(selectedAppointment.id)
+              }}
+            >
+              {archiveSingleMutation.isPending ? t('common.loading') : t('appointments.archiveAppointment')}
+            </Button>
+            )}
+          {selectedAppointment && canExecutivePurge && (
+            <Button
+              color="error"
+              variant="outlined"
+              startIcon={<DeleteForeverIcon />}
+              disabled={permanentSingleMutation.isPending}
+              onClick={() => {
+                if (!window.confirm(t('appointments.permanentDeleteOneConfirm'))) return
+                permanentSingleMutation.mutate(selectedAppointment.id)
+              }}
+            >
+              {permanentSingleMutation.isPending
+                ? t('common.loading')
+                : t('appointments.permanentDelete')}
+            </Button>
             )}
         </DialogActions>
       </Dialog>
