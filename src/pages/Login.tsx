@@ -23,6 +23,7 @@ import { useAuth } from '../hooks/useAuth'
 import { tokenService } from '../services/tokenService'
 import api from '../services/api'
 import Logo from '../components/Logo'
+import { APP_VERSION } from '../constants/appBrand'
 import PasswordField from '../components/PasswordField'
 
 export default function Login() {
@@ -54,6 +55,9 @@ export default function Login() {
     if (sessionStorage.getItem('fpiconnect_google_auth_lock')) return
     googleOAuthHandled.current = true
     sessionStorage.setItem('fpiconnect_google_auth_lock', '1')
+    const nextRaw = searchParams.get('next')
+    const nextPath =
+      nextRaw && nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : '/app'
     let cancelled = false
     ;(async () => {
       try {
@@ -67,7 +71,7 @@ export default function Login() {
           }
           setSearchParams({}, { replace: true })
           sessionStorage.removeItem('fpiconnect_google_auth_lock')
-          window.location.assign(`${window.location.origin}/app`)
+          window.location.assign(`${window.location.origin}${nextPath}`)
           return
         }
         sessionStorage.removeItem('fpiconnect_google_auth_lock')
@@ -246,20 +250,36 @@ export default function Login() {
               >
                 <Logo size="large" showText={false} />
               </Box>
-              <Typography
-                component="h1"
-                sx={{
-                  fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
-                  fontWeight: 800,
-                  fontSize: { xs: '1.65rem', sm: '2rem' },
-                  letterSpacing: '0.04em',
-                  lineHeight: 1.15,
-                  mb: 1,
-                  color: 'primary.dark',
-                }}
+              <Stack
+                direction="row"
+                alignItems="baseline"
+                justifyContent="center"
+                flexWrap="wrap"
+                columnGap={1}
+                rowGap={0.25}
+                sx={{ mb: 1 }}
               >
-                {t('auth.loginAppTitle')}
-              </Typography>
+                <Typography
+                  component="h1"
+                  sx={{
+                    fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+                    fontWeight: 800,
+                    fontSize: { xs: '1.65rem', sm: '2rem' },
+                    letterSpacing: '0.04em',
+                    lineHeight: 1.15,
+                    color: 'primary.dark',
+                  }}
+                >
+                  {t('auth.loginAppTitle')}
+                </Typography>
+                <Typography
+                  component="span"
+                  variant="subtitle1"
+                  sx={{ fontWeight: 600, color: 'text.secondary', letterSpacing: '0.04em' }}
+                >
+                  v{APP_VERSION}
+                </Typography>
+              </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                 {t('common.subtitle')}
               </Typography>
@@ -428,6 +448,24 @@ export default function Login() {
             )}
           </Paper>
         </Fade>
+        <Stack
+          direction="row"
+          spacing={2}
+          justifyContent="center"
+          alignItems="center"
+          flexWrap="wrap"
+          sx={{ mt: 3, typography: 'caption' }}
+        >
+          <Link component={RouterLink} to="/privacy" variant="caption" underline="hover" color="text.secondary">
+            {t('legal.navPrivacy')}
+          </Link>
+          <Typography component="span" variant="caption" color="text.disabled">
+            ·
+          </Typography>
+          <Link component={RouterLink} to="/terms" variant="caption" underline="hover" color="text.secondary">
+            {t('legal.navTerms')}
+          </Link>
+        </Stack>
       </Container>
     </Box>
   )

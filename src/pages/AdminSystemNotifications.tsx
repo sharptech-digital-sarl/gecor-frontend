@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import {
   Box,
   Paper,
@@ -14,10 +15,11 @@ import {
   Tab,
   TableSortLabel,
 } from '@mui/material'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import api from '../services/api'
 import { useTableSort } from '../hooks/useTableSort'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type InApp = {
   id: string
@@ -93,6 +95,52 @@ export default function AdminSystemNotifications() {
     }
   })
 
+  const inAppExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'time', header: t('adminNotifications.colTime') },
+      { key: 'user', header: t('adminNotifications.colUser') },
+      { key: 'title', header: t('adminNotifications.colTitle') },
+      { key: 'body', header: t('adminNotifications.colBody') },
+      { key: 'read', header: t('adminNotifications.colRead') },
+    ],
+    [t]
+  )
+
+  const inAppExportRows = useMemo(
+    () =>
+      sortedInApp.map((row) => ({
+        time: new Date(row.created_at).toLocaleString(),
+        user: row.user_username ? `${row.user_username} (${row.user_email ?? '—'})` : '—',
+        title: row.title,
+        body: row.body,
+        read: row.read_at ? t('common.yes') : t('common.no'),
+      })),
+    [sortedInApp, t]
+  )
+
+  const emailExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'time', header: t('adminNotifications.colTime') },
+      { key: 'status', header: t('adminNotifications.colStatus') },
+      { key: 'recipient', header: t('adminNotifications.colRecipient') },
+      { key: 'subject', header: t('adminNotifications.colSubject') },
+    ],
+    [t]
+  )
+
+  const emailExportRows = useMemo(
+    () =>
+      sortedEmail.map((row) => ({
+        time: new Date(row.created_at).toLocaleString(),
+        status: row.status,
+        recipient: row.recipient_username
+          ? `${row.recipient_username} (${row.recipient_email ?? '—'})`
+          : row.recipient_email ?? '—',
+        subject: row.subject ?? row.message.slice(0, 80),
+      })),
+    [sortedEmail]
+  )
+
   return (
     <Box>
       <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
@@ -109,8 +157,18 @@ export default function AdminSystemNotifications() {
           <CircularProgress />
         </Box>
       ) : tab === 0 ? (
-        <TableContainer component={Paper}>
-          <Table size="small">
+        <>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <TableExportButton
+              filenameBase="notifications-in-app"
+              sheetName={t('adminNotifications.tabInApp')}
+              columns={inAppExportColumns}
+              rows={inAppExportRows}
+              disabled={isLoading}
+            />
+          </Box>
+          <TableContainer component={Paper} sx={tableContainerScrollSx}>
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
                 <TableCell>
@@ -173,9 +231,20 @@ export default function AdminSystemNotifications() {
             </TableBody>
           </Table>
         </TableContainer>
+        </>
       ) : (
-        <TableContainer component={Paper}>
-          <Table size="small">
+        <>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <TableExportButton
+              filenameBase="notifications-email"
+              sheetName={t('adminNotifications.tabEmail')}
+              columns={emailExportColumns}
+              rows={emailExportRows}
+              disabled={isLoading}
+            />
+          </Box>
+          <TableContainer component={Paper} sx={tableContainerScrollSx}>
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
                 <TableCell>
@@ -228,6 +297,7 @@ export default function AdminSystemNotifications() {
             </TableBody>
           </Table>
         </TableContainer>
+        </>
       )}
     </Box>
   )

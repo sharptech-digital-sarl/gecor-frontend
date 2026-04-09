@@ -16,6 +16,8 @@ import {
   MenuItem,
   IconButton,
   Tooltip,
+  Typography,
+  Stack,
   useTheme,
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
@@ -42,6 +44,8 @@ import { isAdminUser, isMasterUser } from '../utils/roles'
 import { canReviewDeletionRequests, hasPermission } from '../utils/permissions'
 import Logo from './Logo'
 import NotificationBell from './NotificationBell'
+import { APP_NAME, APP_VERSION } from '../constants/appBrand'
+import { brandDisplayFontFamily } from '../theme/brandFont'
 
 const drawerWidth = 280
 const drawerWidthMini = 72
@@ -149,7 +153,36 @@ export default function Layout() {
             >
               <MenuIcon />
             </IconButton>
-            <Logo size="small" showText={true} variant="horizontal" />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+              <Logo size="small" showText={false} />
+              <Stack direction="row" alignItems="baseline" spacing={0.75} flexWrap="wrap">
+                <Typography
+                  component="span"
+                  sx={{
+                    fontFamily: brandDisplayFontFamily,
+                    fontWeight: 800,
+                    fontSize: { xs: '1rem', sm: '1.15rem' },
+                    letterSpacing: '0.1em',
+                    color: 'white',
+                    lineHeight: 1.15,
+                    textShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  {APP_NAME}
+                </Typography>
+                <Typography
+                  component="span"
+                  variant="caption"
+                  sx={{
+                    fontWeight: 600,
+                    color: 'rgba(255,255,255,0.88)',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  v{APP_VERSION}
+                </Typography>
+              </Stack>
+            </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <NotificationBell />
@@ -269,7 +302,8 @@ export default function Layout() {
               px: sidebarExpanded ? 2 : 0.5,
               mb: sidebarExpanded ? 3 : 2,
               display: 'flex',
-              justifyContent: 'center',
+              flexDirection: 'column',
+              alignItems: 'center',
               pt: 1,
               '& img': {
                 filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))',
@@ -277,7 +311,60 @@ export default function Layout() {
               },
             }}
           >
-            <Logo size="small" showText={false} />
+            {sidebarExpanded ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  width: '100%',
+                }}
+              >
+                <Logo size="small" showText={false} />
+                <Stack
+                  direction="row"
+                  alignItems="baseline"
+                  justifyContent="center"
+                  spacing={0.75}
+                  flexWrap="wrap"
+                  sx={{ mt: 1.5, px: 0.5 }}
+                >
+                  <Typography
+                    component="span"
+                    sx={{
+                      fontFamily: brandDisplayFontFamily,
+                      fontWeight: 800,
+                      fontSize: '1.05rem',
+                      letterSpacing: '0.1em',
+                      color: 'primary.dark',
+                      lineHeight: 1.15,
+                    }}
+                  >
+                    {APP_NAME}
+                  </Typography>
+                  <Typography
+                    component="span"
+                    variant="caption"
+                    sx={{ fontWeight: 600, color: 'text.secondary', letterSpacing: '0.04em' }}
+                  >
+                    v{APP_VERSION}
+                  </Typography>
+                </Stack>
+              </Box>
+            ) : (
+              <Tooltip title={`${APP_NAME} v${APP_VERSION}`} placement="right" arrow>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: '100%',
+                  }}
+                >
+                  <Logo size="small" showText={false} />
+                </Box>
+              </Tooltip>
+            )}
           </Box>
           <List sx={{ px: sidebarExpanded ? 1.5 : 0.5 }}>
             {menuItems.map((item) => {

@@ -20,10 +20,13 @@
     "warning": "Warning",
     "info": "Info",
     "apply": "Apply",
-    "back": "Back"
+    "back": "Back",
+    "export": "Export",
+    "exportXlsx": "Excel (.xlsx)",
+    "exportJson": "JSON"
   },
   "auth": {
-    "loginAppTitle": "GECOR 1.0",
+    "loginAppTitle": "GECOR",
     "linkToPublicHome": "Back to public home",
     "login": "Sign In",
     "logout": "Logout",
@@ -158,7 +161,7 @@
     "submit": "Submit request"
   },
   "publicHome": {
-    "title": "GECOR 1.0",
+    "title": "GECOR",
     "intro": "Electronic Mail and Appointments Management — Public portal.",
     "ctaBooking": "Book an appointment",
     "ctaLogin": "Staff login",
@@ -172,6 +175,45 @@
     "postMetaAuthor": "Author: {{username}}",
     "postMetaPublished": "Published {{date}}",
     "postMetaUpdated": "Updated {{date}}"
+  },
+  "legal": {
+    "navPrivacy": "Privacy policy",
+    "navTerms": "Terms of use",
+    "backHome": "← Back to home",
+    "privacy": {
+      "title": "Privacy policy",
+      "updated": "Last updated: April 2026",
+      "s1Title": "Purpose and scope",
+      "s1Body": "This privacy policy describes how the GECOR application (the “Service”) processes personal data when you use the public portal (appointments, information) or when you authenticate as staff to access internal features (mail, calendar, reception, administration).\n\nThe organisation operating the Service is responsible for determining the purposes and means of processing. Contact your data protection officer or legal department if you need the identity of the controller for your deployment.",
+      "s2Title": "Categories of data processed",
+      "s2Body": "Depending on how you use the Service, we may process: account and authentication data (identifier, email, role, security settings such as MFA); technical connection data (logs, IP address, timestamps); content and metadata related to mail and documents processed in the application; data relating to appointments and visitors (name, contact details, company, visit slot, optional documents or photos if your organisation enables these features); and any information you voluntarily enter into forms or profile fields.\n\nThe exact list of fields depends on your organisation’s configuration and your role.",
+      "s3Title": "Purposes and legal bases",
+      "s3Body": "Data is processed to provide the Service (account management, workflows, notifications), ensure security (fraud prevention, access control, audit where enabled), meet legal obligations applicable to your organisation, and, where appropriate, pursue legitimate interests such as improving availability and support — balanced against your rights.\n\nWhere consent is required for a specific processing operation, it will be collected separately in accordance with applicable law.",
+      "s4Title": "Retention and security",
+      "s4Body": "Personal data is kept only for the time necessary for the purposes described, in line with your organisation’s retention policies and legal requirements. The Service implements appropriate technical and organisational measures (access controls, encryption in transit where configured, backups, traceability) without guaranteeing absolute security of transmissions over the Internet.",
+      "s5Title": "Your rights",
+      "s5Body": "Subject to applicable law, you may have the right to access, rectify or erase your data, restrict or object to certain processing, request portability where relevant, and withdraw consent when processing is based on consent. You may also lodge a complaint with a supervisory authority.\n\nTo exercise your rights, contact your organisation’s administrator or designated privacy contact. Response times and exceptions (e.g. legal retention) follow applicable regulations.",
+      "s6Title": "Changes",
+      "s6Body": "This policy may be updated to reflect changes to the Service or legal requirements. The “Last updated” date will be revised; material changes may be communicated by your organisation through the usual channels. Continued use of the Service after an update constitutes acceptance where permitted by law."
+    },
+    "terms": {
+      "title": "Terms of use",
+      "updated": "Last updated: April 2026",
+      "s1Title": "Acceptance",
+      "s1Body": "By accessing or using the GECOR application (the “Service”), you agree to these terms of use. If you use the Service on behalf of an organisation, you represent that you have authority to bind that organisation. If you do not agree, do not use the Service.",
+      "s2Title": "Description of the Service",
+      "s2Body": "The Service provides tools for managing electronic mail, appointments, reception and related workflows, according to modules and permissions configured by your organisation. Features may evolve; availability is provided on a best-effort basis. The Service may be suspended for maintenance, security or legal reasons.",
+      "s3Title": "Accounts and acceptable use",
+      "s3Body": "You must provide accurate information and keep your credentials confidential. You must not misuse the Service: no attempt to breach security, access data without authorisation, introduce malware, overload systems, or use the Service in violation of law or internal policies. Your organisation may define additional rules; non-compliance may result in suspension of access and disciplinary or legal action.",
+      "s4Title": "Content and intellectual property",
+      "s4Body": "Your organisation retains rights to data and documents it processes through the Service. The software, branding and documentation of the Service remain the property of their respective owners. Unless expressly permitted, you may not copy, reverse engineer or redistribute the Service.",
+      "s5Title": "Disclaimer and limitation of liability",
+      "s5Body": "The Service is provided “as is” to the extent permitted by law. No guarantee is given of uninterrupted or error-free operation. To the fullest extent permitted by applicable law, liability for indirect or consequential damages is excluded, and aggregate liability is limited as allowed by law and your organisation’s agreements. Nothing in these terms excludes liability that cannot be limited by law.",
+      "s6Title": "Changes to the terms",
+      "s6Body": "These terms may be updated. The “Last updated” date will change. Your organisation may notify you of material changes. Continued use after publication may constitute acceptance where permitted by law.",
+      "s7Title": "Applicable law and disputes",
+      "s7Body": "Mandatory consumer or employee protections may apply regardless of the following. Subject to those provisions, the law and jurisdiction applicable to your relationship with the organisation operating the Service shall govern disputes. For staff users, internal procedures may apply first."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -600,7 +642,7 @@
     "passwordChangeTooShort": "The new password must be at least 8 characters.",
     "passwordChangeMismatch": "Confirmation does not match the new password.",
     "passwordChangeError": "Could not change password. Check your current password.",
-    "passwordChangeSectionTitle": "Password",
+    "passwordChangeSectionTitle": "Password change",
     "passwordChangeSectionIntro": "To change your password, enter your current password and the new one. You will be asked for a 6-digit code: by email if MFA is not enabled, otherwise from your authenticator app (TOTP).",
     "passwordChangeRequestCode": "Continue — send code",
     "passwordChangeVerify": "Confirm code and save",
@@ -761,6 +803,7 @@
     "resetPasswordSuccess": "Password updated. Request closed.",
     "colPasswordReset": "Pwd reset",
     "colResetMode": "Pwd mode",
+    "colResolutionExport": "Resolution / notes",
     "modePolicy": "Policy (.env)",
     "modeCustom": "Custom",
     "mustChangeYes": "must change at sign-in",

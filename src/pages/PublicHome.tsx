@@ -16,6 +16,7 @@ import { useAuth } from '../hooks/useAuth'
 import { tokenService } from '../services/tokenService'
 import { useDateFormat } from '../hooks/useDateFormat'
 import { ModalSectionHeader, ModalSectionBody } from '../components/common/DetailModalLayout'
+import { APP_VERSION } from '../constants/appBrand'
 
 type PublicPost = {
   id: string
@@ -48,19 +49,28 @@ export default function PublicHome() {
       <Container maxWidth="md">
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden', mb: 3 }}>
           <ModalSectionHeader>
-            <Typography
-              component="h1"
-              sx={{
-                fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
-                fontWeight: 800,
-                fontSize: { xs: '1.65rem', sm: '2rem' },
-                letterSpacing: '0.04em',
-                lineHeight: 1.15,
-                color: 'primary.dark',
-              }}
-            >
-              {t('publicHome.title')}
-            </Typography>
+            <Stack direction="row" alignItems="baseline" flexWrap="wrap" columnGap={1} rowGap={0.25}>
+              <Typography
+                component="h1"
+                sx={{
+                  fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+                  fontWeight: 800,
+                  fontSize: { xs: '1.65rem', sm: '2rem' },
+                  letterSpacing: '0.04em',
+                  lineHeight: 1.15,
+                  color: 'primary.dark',
+                }}
+              >
+                {t('publicHome.title')}
+              </Typography>
+              <Typography
+                component="span"
+                variant="subtitle1"
+                sx={{ fontWeight: 600, color: 'text.secondary', letterSpacing: '0.04em' }}
+              >
+                v{APP_VERSION}
+              </Typography>
+            </Stack>
             <Typography variant="body1" color="text.secondary" sx={{ mt: 1.5 }}>
               {t('publicHome.intro')}
             </Typography>
@@ -167,6 +177,23 @@ export default function PublicHome() {
             )}
           </ModalSectionBody>
         </Paper>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          justifyContent="center"
+          alignItems="center"
+          sx={{ mt: 2, typography: 'body2' }}
+        >
+          <Link component={RouterLink} to="/privacy" underline="hover" color="text.secondary">
+            {t('legal.navPrivacy')}
+          </Link>
+          <Typography component="span" variant="body2" color="text.disabled" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+            ·
+          </Typography>
+          <Link component={RouterLink} to="/terms" underline="hover" color="text.secondary">
+            {t('legal.navTerms')}
+          </Link>
+        </Stack>
       </Container>
     </Box>
   )

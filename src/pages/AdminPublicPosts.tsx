@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import {
   Box,
   Button,
@@ -26,6 +27,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import { useTranslation } from 'react-i18next'
 import api from '../services/api'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type Post = {
   id: string
@@ -96,23 +98,53 @@ export default function AdminPublicPosts() {
     setDialogOpen(true)
   }
 
+  const postsExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'sort_order', header: t('adminPublicPosts.colOrder') },
+      { key: 'title', header: t('adminPublicPosts.colTitle') },
+      { key: 'published', header: t('adminPublicPosts.colPublished') },
+      { key: 'updated_at', header: t('adminPublicPosts.colUpdated') },
+    ],
+    [t]
+  )
+
+  const postsExportRows = useMemo(
+    () =>
+      (data ?? []).map((p) => ({
+        sort_order: p.sort_order,
+        title: p.title,
+        published: p.published ? t('common.yes') : t('common.no'),
+        updated_at: new Date(p.updated_at).toLocaleString(),
+      })),
+    [data, t]
+  )
+
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
           {t('adminPublicPosts.title')}
         </Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-          {t('adminPublicPosts.create')}
-        </Button>
+        <Box display="flex" gap={1} alignItems="center" flexWrap="wrap">
+          <TableExportButton
+            filenameBase="public-posts"
+            sheetName={t('adminPublicPosts.title')}
+            columns={postsExportColumns}
+            rows={postsExportRows}
+            disabled={isLoading}
+          />
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+            {t('adminPublicPosts.create')}
+          </Button>
+        </Box>
       </Box>
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={tableContainerScrollSx}>
         {isLoading ? (
           <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
             <CircularProgress />
           </Box>
         ) : (
-          <Table size="small">
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
                 <TableCell>{t('adminPublicPosts.colOrder')}</TableCell>

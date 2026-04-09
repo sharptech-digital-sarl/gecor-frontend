@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
@@ -7,21 +8,62 @@ interface LogoProps {
   variant?: 'horizontal' | 'vertical'
 }
 
+const LOGO_DIR = '/logo'
+const DEFAULT_LOGO_FILE = 'default.svg'
+
+/** Nom de fichier uniquement (sous public/logo/), sans chemin — sécurité. */
+function sanitizeLogoFileName(name: string): string {
+  const base = (name || '').trim()
+  if (!base || base.includes('/') || base.includes('\\') || base.includes('..')) {
+    return DEFAULT_LOGO_FILE
+  }
+  if (!/^[\w.\-]+$/.test(base)) {
+    return DEFAULT_LOGO_FILE
+  }
+  return base
+}
+
+function logoUrl(file: string): string {
+  return `${LOGO_DIR}/${file}`
+}
+
 export default function Logo({ size = 'medium', showText = true, variant = 'horizontal' }: LogoProps) {
   const { t } = useTranslation()
-  
+  const configuredFile = sanitizeLogoFileName(
+    (import.meta.env.VITE_LOGO_FILE as string | undefined) || DEFAULT_LOGO_FILE
+  )
+  const primarySrc = logoUrl(configuredFile)
+  const fallbackImageSrc = logoUrl(DEFAULT_LOGO_FILE)
+
+  const [imgSrc, setImgSrc] = useState(primarySrc)
+  const [imageFailed, setImageFailed] = useState(false)
+
+  const monogram = useMemo(() => {
+    const fromEnv = (import.meta.env.VITE_LOGO_MONOGRAM as string | undefined)?.trim()
+    if (fromEnv) {
+      return fromEnv.slice(0, 3).toUpperCase()
+    }
+    const name = t('common.appName', { defaultValue: 'App' })
+    const letters = name.replace(/[^a-zA-ZÀ-ÿ0-9]/g, '').slice(0, 2)
+    return letters.length >= 2 ? letters.toUpperCase() : name.slice(0, 2).toUpperCase() || '•'
+  }, [t])
+
   const sizes = {
     small: { icon: 32, textSize: 14, spacing: 1 },
     medium: { icon: 48, textSize: 16, spacing: 1.5 },
     large: { icon: 80, textSize: 24, spacing: 2 },
   }
-  
+
   const currentSize = sizes[size]
-  
-  // Try to load logo from public folder
-  const logoSrc = '/logo.png'
-  const logoSvg = '/logo.svg'
-  
+
+  const handleImgError = () => {
+    if (imgSrc !== fallbackImageSrc && configuredFile !== DEFAULT_LOGO_FILE) {
+      setImgSrc(fallbackImageSrc)
+      return
+    }
+    setImageFailed(true)
+  }
+
   return (
     <Box
       sx={{
@@ -31,68 +73,59 @@ export default function Logo({ size = 'medium', showText = true, variant = 'hori
         flexDirection: variant === 'vertical' ? 'column' : 'row',
       }}
     >
-      {/* Try to load logo image, fallback to styled text logo */}
-      <Box
-        component="img"
-        src={logoSrc}
-        alt="FPI-CONNECT Logo"
-        onError={(e: any) => {
-          // If PNG fails, try SVG
-          if (e.target.src !== logoSvg && !e.target.dataset.triedSvg) {
-            e.target.dataset.triedSvg = 'true'
-            e.target.src = logoSvg
-          } else {
-            // If both fail, hide image and show text logo
-            e.target.style.display = 'none'
-            const parent = e.target.parentElement
-            if (parent) {
-              const textLogo = parent.querySelector('.text-logo') as HTMLElement
-              if (textLogo) textLogo.style.display = 'flex'
-            }
-          }
-        }}
-        sx={{
-          height: currentSize.icon,
-          width: 'auto',
-          maxWidth: currentSize.icon * 2,
-          objectFit: 'contain',
-          display: 'block',
-          filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))',
-        }}
-      />
-      {/* Fallback text logo */}
-      <Box
-        className="text-logo"
-        sx={{
-          display: 'none',
-          width: currentSize.icon,
-          height: currentSize.icon,
-          borderRadius: 2,
-          bgcolor: 'primary.dark',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.15)',
-          position: 'relative',
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            inset: 0,
-            borderRadius: 2,
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%)',
-          },
-        }}
-      >
-        <Typography
+      {!imageFailed ? (
+        <Box
+          component="img"
+          src={imgSrc}
+          alt={showText ? '' : t('common.appName')}
+          onError={handleImgError}
           sx={{
-            color: 'white',
-            fontWeight: 800,
-            fontSize: currentSize.icon * 0.4,
-            letterSpacing: '-0.02em',
+            height: currentSize.icon,
+            width: 'auto',
+            maxWidth: currentSize.icon * 2,
+            objectFit: 'contain',
+            display: 'block',
+            filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))',
+          }}
+        />
+      ) : (
+        <Box
+          className="text-logo"
+          sx={{
+            display: 'flex',
+            width: currentSize.icon,
+            height: currentSize.icon,
+            borderRadius: 2,
+            bgcolor: 'primary.dark',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.15)',
+            position: 'relative',
+            flexShrink: 0,
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 2,
+              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%)',
+            },
           }}
         >
-          FPI
-        </Typography>
-      </Box>
+          <Typography
+            sx={{
+              color: 'white',
+              fontWeight: 800,
+              fontSize: Math.max(currentSize.icon * (monogram.length > 2 ? 0.28 : 0.36), 10),
+              letterSpacing: '-0.02em',
+              lineHeight: 1,
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            {monogram}
+          </Typography>
+        </Box>
+      )}
       {showText && (
         <Box sx={{ display: 'flex', flexDirection: 'column' }}>
           <Typography
@@ -128,4 +161,3 @@ export default function Logo({ size = 'medium', showText = true, variant = 'hori
     </Box>
   )
 }
-

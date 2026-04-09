@@ -20,10 +20,13 @@
     "warning": "Avertissement",
     "info": "Information",
     "apply": "Appliquer",
-    "back": "Retour"
+    "back": "Retour",
+    "export": "Exporter",
+    "exportXlsx": "Excel (.xlsx)",
+    "exportJson": "JSON"
   },
   "auth": {
-    "loginAppTitle": "GECOR 1.0",
+    "loginAppTitle": "GECOR",
     "linkToPublicHome": "Retour à l’accueil public",
     "login": "Se connecter",
     "logout": "Déconnexion",
@@ -158,7 +161,7 @@
     "submit": "Envoyer la demande"
   },
   "publicHome": {
-    "title": "GECOR 1.0",
+    "title": "GECOR",
     "intro": "Gestion Electronique du Courrier et des Rendez-vous — Portail public.",
     "ctaBooking": "Prendre un rendez-vous",
     "ctaLogin": "Connexion personnel",
@@ -172,6 +175,45 @@
     "postMetaAuthor": "Auteur : {{username}}",
     "postMetaPublished": "Publié le {{date}}",
     "postMetaUpdated": "Mis à jour le {{date}}"
+  },
+  "legal": {
+    "navPrivacy": "Politique de confidentialité",
+    "navTerms": "Conditions d’utilisation",
+    "backHome": "← Retour à l’accueil",
+    "privacy": {
+      "title": "Politique de confidentialité",
+      "updated": "Dernière mise à jour : avril 2026",
+      "s1Title": "Objet et champ d’application",
+      "s1Body": "La présente politique décrit le traitement des données personnelles dans le cadre de l’application GECOR (le « Service »), lorsque vous utilisez le portail public (prise de rendez-vous, informations) ou lorsque vous vous authentifiez en tant qu’agent pour accéder aux fonctionnalités internes (courrier, agenda, accueil, administration).\n\nL’organisme responsable du Service détermine les finalités et les moyens du traitement. Pour connaître l’identité du responsable du traitement dans votre contexte, contactez votre délégué à la protection des données ou votre service juridique.",
+      "s2Title": "Catégories de données traitées",
+      "s2Body": "Selon les usages, peuvent être traitées notamment : les données de compte et d’authentification (identifiant, courriel, rôle, paramètres de sécurité comme le MFA) ; des données techniques de connexion (journaux, adresse IP, horodatages) ; le contenu et les métadonnées liés aux courriers et documents gérés dans l’application ; les données liées aux rendez-vous et visiteurs (nom, coordonnées, entreprise, créneau, pièces ou photos facultatives si votre organisme active ces fonctions) ; et toute information saisie volontairement dans des formulaires ou profils.\n\nLa liste exacte des champs dépend de la configuration de votre organisme et de votre rôle.",
+      "s3Title": "Finalités et bases légales",
+      "s3Body": "Les données sont traitées pour fournir le Service (gestion des comptes, workflows, notifications), assurer la sécurité (prévention des abus, contrôle d’accès, audit le cas échéant), respecter les obligations légales applicables à votre organisme et, le cas échéant, poursuivre des intérêts légitimes (disponibilité, support), dans le respect d’un équilibre avec vos droits.\n\nLorsqu’un consentement est requis pour un traitement spécifique, il est recueilli selon les modalités prévues par la réglementation.",
+      "s4Title": "Conservation et sécurité",
+      "s4Body": "Les données personnelles sont conservées pendant la durée nécessaire aux finalités décrites, conformément aux politiques de conservation de votre organisme et aux obligations légales. Le Service met en œuvre des mesures techniques et organisationnelles appropriées (contrôle des accès, chiffrement des échanges lorsque c’est configuré, sauvegardes, traçabilité), sans garantir une sécurité absolue des transmissions sur Internet.",
+      "s5Title": "Vos droits",
+      "s5Body": "Sous réserve du droit applicable, vous pouvez disposer d’un droit d’accès, de rectification, d’effacement, de limitation ou d’opposition au traitement, de portabilité lorsque c’est pertinent, et du retrait du consentement lorsque le traitement y est fondé. Vous pouvez introduire une réclamation auprès d’une autorité de contrôle.\n\nPour exercer vos droits, adressez-vous à l’administrateur de votre organisme ou au contact désigné pour la protection des données. Les délais de réponse et les exceptions (ex. obligations légales de conservation) suivent la réglementation en vigueur.",
+      "s6Title": "Évolution de la politique",
+      "s6Body": "Cette politique peut être mise à jour pour refléter l’évolution du Service ou des exigences légales. La date de « Dernière mise à jour » sera modifiée ; des changements substantiels peuvent être communiqués par votre organisme par les canaux habituels. La poursuite d’utilisation du Service vaut acceptation lorsque le droit le permet."
+    },
+    "terms": {
+      "title": "Conditions d’utilisation",
+      "updated": "Dernière mise à jour : avril 2026",
+      "s1Title": "Acceptation",
+      "s1Body": "En accédant ou en utilisant l’application GECOR (le « Service »), vous acceptez les présentes conditions d’utilisation. Si vous agissez pour le compte d’un organisme, vous déclarez être habilité à engager cet organisme. Si vous n’acceptez pas ces conditions, n’utilisez pas le Service.",
+      "s2Title": "Description du Service",
+      "s2Body": "Le Service propose des outils de gestion du courrier électronique, des rendez-vous, de l’accueil et des workflows associés, selon les modules et droits configurés par votre organisme. Les fonctionnalités peuvent évoluer ; la disponibilité est fournie selon les moyens raisonnables. Le Service peut être interrompu pour maintenance, sécurité ou obligation légale.",
+      "s3Title": "Comptes et usage acceptable",
+      "s3Body": "Vous devez fournir des informations exactes et garder vos identifiants confidentiels. Il est interdit d’utiliser le Service de manière abusive : tentative d’intrusion, accès non autorisé aux données, introduction de logiciels malveillants, surcharge des systèmes, ou usage contraire à la loi ou aux règles internes. Votre organisme peut prévoir des règles complémentaires ; le non-respect peut entraîner la suspension d’accès et des mesures disciplinaires ou juridiques.",
+      "s4Title": "Contenu et propriété intellectuelle",
+      "s4Body": "Votre organisme conserve les droits sur les données et documents traités via le Service. Le logiciel, la marque et la documentation du Service restent la propriété de leurs titulaires respectifs. Sauf autorisation expresse, vous ne pouvez pas copier, décompiler ou redistribuer le Service.",
+      "s5Title": "Responsabilité",
+      "s5Body": "Le Service est fourni « en l’état » dans la mesure permise par la loi. Aucune garantie d’un fonctionnement ininterrompu ou exempt d’erreurs n’est donnée. Dans les limites permises par le droit applicable, la responsabilité pour les dommages indirects ou consécutifs est exclue et la responsabilité globale est limitée dans les conditions autorisées par la loi et les accords de votre organisme. Rien dans les présentes conditions ne limite une responsabilité qui ne peut l’être légalement.",
+      "s6Title": "Modification des conditions",
+      "s6Body": "Les présentes conditions peuvent être mises à jour. La date de « Dernière mise à jour » sera modifiée. Votre organisme peut vous informer des changements importants. La poursuite d’utilisation après publication peut valoir acceptation lorsque le droit le permet.",
+      "s7Title": "Droit applicable et litiges",
+      "s7Body": "Les protections impératives des consommateurs ou des salariés peuvent s’appliquer indépendamment de ce qui suit. Sous ces réserves, le droit et la juridiction applicables à votre relation avec l’organisme exploitant le Service prévalent pour les litiges. Pour les agents, des procédures internes peuvent s’appliquer en premier lieu."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -600,7 +642,7 @@
     "passwordChangeTooShort": "Le nouveau mot de passe doit contenir au moins 8 caractères.",
     "passwordChangeMismatch": "La confirmation ne correspond pas au nouveau mot de passe.",
     "passwordChangeError": "Impossible de modifier le mot de passe. Vérifiez le mot de passe actuel.",
-    "passwordChangeSectionTitle": "Mot de passe",
+    "passwordChangeSectionTitle": "Modification de mot de passe",
     "passwordChangeSectionIntro": "Pour modifier votre mot de passe, saisissez l’actuel puis le nouveau. Un code à 6 chiffres vous sera demandé : par e-mail si le MFA n’est pas activé, sinon via votre application d’authentification (TOTP).",
     "passwordChangeRequestCode": "Continuer — envoyer le code",
     "passwordChangeVerify": "Valider le code et enregistrer",
@@ -761,6 +803,7 @@
     "resetPasswordSuccess": "Mot de passe mis à jour. La demande est clôturée.",
     "colPasswordReset": "Réinit. MDP",
     "colResetMode": "Mode MDP",
+    "colResolutionExport": "Résolution / notes",
     "modePolicy": "Politique (.env)",
     "modeCustom": "Personnalisé",
     "mustChangeYes": "changement requis",

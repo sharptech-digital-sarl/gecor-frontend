@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 self.addEventListener('push', (event) => {
-  let title = 'FPI-CONNECT'
+  let title = 'GECOR'
   let body = ''
   let soundCategory = 'other'
   try {

@@ -18,6 +18,8 @@ import AdminSystemNotifications from './pages/AdminSystemNotifications'
 import AdminPublicPosts from './pages/AdminPublicPosts'
 import ForgotPassword from './pages/ForgotPassword'
 import PasswordResetRequestsAdmin from './pages/PasswordResetRequestsAdmin'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import TermsOfUse from './pages/TermsOfUse'
 import Layout from './components/Layout'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -93,6 +95,8 @@ function App() {
       <Route path="/" element={<PublicHome />} />
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfUse />} />
       <Route path="/public/booking" element={<PublicBooking />} />
       <Route path="/book" element={<Navigate to="/public/booking" replace />} />
       <Route

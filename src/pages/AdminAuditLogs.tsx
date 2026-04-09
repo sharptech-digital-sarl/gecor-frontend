@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 import {
   Box,
   Paper,
@@ -101,6 +103,29 @@ export default function AdminAuditLogs() {
     }
   })
 
+  const auditExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'timestamp', header: t('adminAudit.colTime') },
+      { key: 'action', header: t('adminAudit.colAction') },
+      { key: 'resource', header: t('adminAudit.colResource') },
+      { key: 'actor', header: t('adminAudit.colActor') },
+      { key: 'ip', header: t('adminAudit.colIp') },
+    ],
+    [t]
+  )
+
+  const auditExportRows = useMemo(
+    () =>
+      sortedRows.map((row) => ({
+        timestamp: new Date(row.timestamp).toLocaleString(),
+        action: row.action,
+        resource: row.resource_id ? `${row.resource_type} / ${row.resource_id}` : row.resource_type,
+        actor: row.actor_username ? `${row.actor_username} (${row.actor_email ?? '—'})` : '—',
+        ip: row.ip_address ?? '—',
+      })),
+    [sortedRows]
+  )
+
   return (
     <Box>
       <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
@@ -146,14 +171,23 @@ export default function AdminAuditLogs() {
         <Button variant="contained" onClick={applyFilters} sx={{ alignSelf: 'center' }}>
           {t('common.apply')}
         </Button>
+        <Box sx={{ ml: 'auto', alignSelf: 'center' }}>
+          <TableExportButton
+            filenameBase="audit-log"
+            sheetName={t('adminAudit.title')}
+            columns={auditExportColumns}
+            rows={auditExportRows}
+            disabled={isLoading}
+          />
+        </Box>
       </Paper>
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={tableContainerScrollSx}>
         {isLoading ? (
           <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
             <CircularProgress />
           </Box>
         ) : (
-          <Table size="small">
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
                 <TableCell>

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import {
   Box,
   Typography,
@@ -24,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
 import api from '../services/api'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type DeletionRequestRow = {
   id: string
@@ -98,6 +100,29 @@ export default function DeletionRequests() {
     return targetType
   }
 
+  const deletionExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'created_at', header: t('deletionRequests.colDate') },
+      { key: 'target_type', header: t('deletionRequests.colType') },
+      { key: 'target_id', header: t('deletionRequests.colTarget') },
+      { key: 'reason', header: t('deletionRequests.colReason') },
+      { key: 'status', header: t('deletionRequests.colStatus') },
+    ],
+    [t]
+  )
+
+  const deletionExportRows = useMemo(
+    () =>
+      (rows ?? []).map((row) => ({
+        created_at: formatDateTime(row.created_at),
+        target_type: typeLabel(row.target_type),
+        target_id: row.target_id,
+        reason: row.reason || '—',
+        status: row.status,
+      })),
+    [rows, formatDateTime, t]
+  )
+
   return (
     <Box>
       <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
@@ -120,8 +145,18 @@ export default function DeletionRequests() {
         </Alert>
       )}
 
-      <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
-        <Table size="small">
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <TableExportButton
+          filenameBase={`deletion-requests-${tab}`}
+          sheetName={t('deletionRequests.title')}
+          columns={deletionExportColumns}
+          rows={deletionExportRows}
+          disabled={isLoading}
+        />
+      </Box>
+
+      <TableContainer component={Paper} sx={{ ...tableContainerScrollSx, borderRadius: 2 }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>{t('deletionRequests.colDate')}</TableCell>

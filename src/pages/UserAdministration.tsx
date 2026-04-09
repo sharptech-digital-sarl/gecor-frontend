@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import {
   Box,
   Typography,
@@ -55,6 +56,7 @@ import { useTableSort } from '../hooks/useTableSort'
 import { isAdminUser, isMasterUser } from '../utils/roles'
 import api from '../services/api'
 import PasswordField from '../components/PasswordField'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type AdminUser = {
   id: string
@@ -434,6 +436,52 @@ export default function UserAdministration() {
   const roleSelectLabel = (name: string) =>
     t(`usersAdmin.roleNames.${name}`, { defaultValue: name.replace(/_/g, ' ') })
 
+  const usersExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'username', header: t('auth.username') },
+      { key: 'full_name', header: t('usersAdmin.fullName') },
+      { key: 'email', header: t('usersAdmin.email') },
+      { key: 'role', header: t('usersAdmin.role') },
+      { key: 'active', header: t('usersAdmin.active') },
+      { key: 'created_at', header: t('usersAdmin.createdAt') },
+    ],
+    [t]
+  )
+
+  const usersExportRows = useMemo(
+    () =>
+      sorted.map((u) => ({
+        username: u.username,
+        full_name: u.full_name,
+        email: u.email,
+        role: t(`usersAdmin.roleNames.${u.role}`, { defaultValue: u.role.replace(/_/g, ' ') }),
+        active: u.is_active ? t('common.yes') : t('common.no'),
+        created_at: new Date(u.created_at).toLocaleString(),
+      })),
+    [sorted, t]
+  )
+
+  const activityExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'timestamp', header: t('adminAudit.colTime') },
+      { key: 'action', header: t('adminAudit.colAction') },
+      { key: 'resource', header: t('adminAudit.colResource') },
+      { key: 'ip', header: t('adminAudit.colIp') },
+    ],
+    [t]
+  )
+
+  const activityExportRows = useMemo(
+    () =>
+      (userAuditRows ?? []).map((row) => ({
+        timestamp: new Date(row.timestamp).toLocaleString(),
+        action: row.action,
+        resource: row.resource_id ? `${row.resource_type} · ${row.resource_id}` : row.resource_type,
+        ip: row.ip_address ?? '—',
+      })),
+    [userAuditRows]
+  )
+
   const toggleUserSelection = (id: string) => {
     setSelectedUserIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
@@ -581,8 +629,18 @@ export default function UserAdministration() {
         </Stack>
       </Paper>
 
-      <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
-        <Table size="small">
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <TableExportButton
+          filenameBase="users"
+          sheetName={t('usersAdmin.title')}
+          columns={usersExportColumns}
+          rows={usersExportRows}
+          disabled={isLoading}
+        />
+      </Box>
+
+      <TableContainer component={Paper} sx={{ ...tableContainerScrollSx, borderRadius: 2 }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               {canEditRoles && (
@@ -1018,8 +1076,19 @@ export default function UserAdministration() {
               <CircularProgress />
             </Box>
           ) : (
-            <TableContainer>
-              <Table size="small">
+            <>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                <TableExportButton
+                  filenameBase={`user-activity-${detailUserId ?? 'export'}`}
+                  sheetName={t('usersAdmin.activityModalTitle', {
+                    name: detailUser?.full_name || detailUser?.username || '',
+                  })}
+                  columns={activityExportColumns}
+                  rows={activityExportRows}
+                />
+              </Box>
+              <TableContainer sx={tableContainerScrollSx}>
+              <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
                     <TableCell>{t('adminAudit.colTime')}</TableCell>
@@ -1053,6 +1122,7 @@ export default function UserAdministration() {
                 </TableBody>
               </Table>
             </TableContainer>
+            </>
           )}
         </DialogContent>
         <DialogActions>

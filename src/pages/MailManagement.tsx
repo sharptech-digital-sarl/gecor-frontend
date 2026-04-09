@@ -33,6 +33,7 @@ import {
 } from '@mui/icons-material'
 import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import { useTableSort } from '../hooks/useTableSort'
 import api from '../services/api'
 import DocumentUpload from '../components/mail/DocumentUpload'
@@ -40,6 +41,7 @@ import DocumentViewer from '../components/mail/DocumentViewer'
 import { useAuth } from '../hooks/useAuth'
 import { hasPermission } from '../utils/permissions'
 import { isAdminUser } from '../utils/roles'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type MailSortKey = 'reference_number' | 'title' | 'status' | 'priority' | 'created_at'
 
@@ -80,6 +82,7 @@ export default function MailManagement() {
       indexed: t('mail.statusIndexed'),
       assigned: t('mail.statusAssigned'),
       pending_validation: t('mail.statusPendingValidation'),
+      pending_director: t('mail.statusPendingDirector'),
       on_hold: t('mail.statusOnHold'),
       approved: t('mail.statusApproved'),
       closed: t('mail.statusClosed'),
@@ -166,6 +169,50 @@ export default function MailManagement() {
   const selectableMailIds = useMemo(
     () => sortedDocuments.map((d: { id: string }) => d.id),
     [sortedDocuments]
+  )
+
+  const mailPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case 'low':
+        return t('mail.priorityLow')
+      case 'normal':
+        return t('mail.priorityNormal')
+      case 'high':
+        return t('mail.priorityHigh')
+      case 'urgent':
+        return t('mail.priorityUrgent')
+      default:
+        return priority || t('mail.priorityNormal')
+    }
+  }
+
+  const mailExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'reference_number', header: t('mail.reference') },
+      { key: 'title', header: t('mail.titleLabel') },
+      { key: 'description', header: t('mail.description') },
+      { key: 'status', header: t('mail.status') },
+      { key: 'priority', header: t('mail.priority') },
+      { key: 'created', header: t('mail.created') },
+    ],
+    [t]
+  )
+
+  const mailExportRows = useMemo(
+    () =>
+      sortedDocuments.map((doc: any) => ({
+        reference_number: doc.reference_number || '',
+        title: doc.title || '',
+        description: doc.description || '',
+        status: mailStatusLabel(doc.status),
+        priority: doc.has_pending_deletion_request
+          ? `${mailPriorityLabel(doc.priority)} · ${t('mail.pendingDeletionBadge')}`
+          : mailPriorityLabel(doc.priority),
+        created: doc.created_at
+          ? `${formatDate(doc.created_at, 'LL')} ${formatTime(doc.created_at)}`
+          : '',
+      })),
+    [sortedDocuments, t, formatDate, formatTime]
   )
 
   useEffect(() => {
@@ -303,14 +350,22 @@ export default function MailManagement() {
             <MenuItem value="urgent">{t('mail.priorityUrgent')}</MenuItem>
           </Select>
         </FormControl>
+        <Box sx={{ ml: 'auto', flexShrink: 0 }}>
+          <TableExportButton
+            filenameBase="mail-documents"
+            sheetName={t('mail.title')}
+            columns={mailExportColumns}
+            rows={mailExportRows}
+            disabled={isLoading}
+          />
+        </Box>
       </Box>
 
       <TableContainer
         component={Paper}
         sx={{
+          ...tableContainerScrollSx,
           borderRadius: 3,
-          maxHeight: 'min(70vh, 720px)',
-          overflow: 'auto',
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
           transition: 'all 0.3s ease',
           '&:hover': {

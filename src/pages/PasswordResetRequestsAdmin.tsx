@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import {
   Box,
   Typography,
@@ -33,6 +34,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import api from '../services/api'
 import PasswordField from '../components/PasswordField'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 type Row = {
   id: string
@@ -146,12 +148,61 @@ export default function PasswordResetRequestsAdmin() {
     return <Chip size="small" label={t(`passwordResetRequests.status.${s}`, { defaultValue: s })} color={color} />
   }
 
-  const modeLabel = (m: string | null) => {
+  const modeLabel = useCallback((m: string | null) => {
     if (!m) return '—'
     if (m === 'policy') return t('passwordResetRequests.modePolicy')
     if (m === 'custom') return t('passwordResetRequests.modeCustom')
     return m
-  }
+  }, [t])
+
+  const pwdResetExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'created_at', header: t('passwordResetRequests.colCreated') },
+      { key: 'email', header: t('usersAdmin.email') },
+      { key: 'account', header: t('passwordResetRequests.colAccount') },
+      { key: 'message', header: t('passwordResetRequests.colMessage') },
+      { key: 'status', header: t('passwordResetRequests.colStatus') },
+      { key: 'password_reset_at', header: t('passwordResetRequests.colPasswordReset') },
+      { key: 'reset_mode', header: t('passwordResetRequests.colResetMode') },
+      { key: 'last_reminder', header: t('passwordResetRequests.colLastReminder') },
+      { key: 'resolution', header: t('passwordResetRequests.colResolutionExport') },
+    ],
+    [t]
+  )
+
+  const pwdResetExportRows = useMemo(
+    () =>
+      (data ?? []).map((row) => {
+        const resolutionParts: string[] = []
+        if (row.status !== 'pending') {
+          resolutionParts.push(row.resolution_note || '—')
+          if (row.password_reset_must_change != null) {
+            resolutionParts.push(
+              row.password_reset_must_change
+                ? t('passwordResetRequests.mustChangeYes')
+                : t('passwordResetRequests.mustChangeNo')
+            )
+          }
+        }
+        return {
+          created_at: new Date(row.created_at).toLocaleString(),
+          email: row.email_requested,
+          account:
+            row.requester_full_name || row.requester_username
+              ? `${row.requester_full_name || ''} (${row.requester_username || '—'})`.trim()
+              : '—',
+          message: row.requester_message || '—',
+          status: t(`passwordResetRequests.status.${row.status}`, { defaultValue: row.status }),
+          password_reset_at: row.password_reset_at ? new Date(row.password_reset_at).toLocaleString() : '—',
+          reset_mode: modeLabel(row.password_reset_mode),
+          last_reminder: row.last_master_reminder_at
+            ? new Date(row.last_master_reminder_at).toLocaleString()
+            : '—',
+          resolution: row.status === 'pending' ? '—' : resolutionParts.join(' · '),
+        }
+      }),
+    [data, t, modeLabel]
+  )
 
   return (
     <Box>
@@ -184,8 +235,18 @@ export default function PasswordResetRequestsAdmin() {
         </Alert>
       )}
 
-      <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
-        <Table size="small">
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <TableExportButton
+          filenameBase={`password-reset-requests-${statusFilter}`}
+          sheetName={t('passwordResetRequests.title')}
+          columns={pwdResetExportColumns}
+          rows={pwdResetExportRows}
+          disabled={isLoading}
+        />
+      </Box>
+
+      <TableContainer component={Paper} sx={{ ...tableContainerScrollSx, borderRadius: 2 }}>
+        <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>{t('passwordResetRequests.colCreated')}</TableCell>

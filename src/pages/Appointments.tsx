@@ -54,6 +54,7 @@ import { useTranslation } from 'react-i18next'
 import { useDateFormat } from '../hooks/useDateFormat'
 import { useAuth } from '../hooks/useAuth'
 import { useTableSort } from '../hooks/useTableSort'
+import { tableContainerScrollSx } from '../theme/tableScroll'
 import { isSameLocalDay } from '../utils/dateCompare'
 import api from '../services/api'
 import CreateAppointmentDialog from '../components/appointments/CreateAppointmentDialog'
@@ -75,6 +76,7 @@ import {
   ModalSectionBody,
   modalDialogFooterSx,
 } from '../components/common/DetailModalLayout'
+import { TableExportButton, type TableExportColumn } from '../components/TableExportButton'
 
 /** ID du conteneur pour html5-qrcode (scan QR cross-navigateur, pas seulement Chrome). */
 const APPOINTMENTS_QR_READER_ID = 'appointments-qr-reader'
@@ -715,6 +717,50 @@ export default function Appointments() {
 
   const receptionStatus = (apt: AptRow) =>
     apt.visitor?.checked_in ? t('reception.checkedIn') : t('reception.pending')
+
+  const appointmentsExportColumns = useMemo<TableExportColumn[]>(
+    () => [
+      { key: 'when', header: t('reception.time') },
+      { key: 'visitor_name', header: t('reception.visitorName') },
+      { key: 'visitor_company', header: t('reception.company') },
+      { key: 'host', header: t('appointments.columnVisitHost') },
+      { key: 'status', header: t('reception.status') },
+    ],
+    [t]
+  )
+
+  const appointmentsExportRows = useMemo(
+    () =>
+      sorted.map((apt) => {
+        const statusParts = [statusLabel(apt.status), receptionStatus(apt)]
+        if (apt.has_pending_deletion_request) {
+          statusParts.push(t('appointments.pendingCancellationBadge'))
+        }
+        if (apt.booking_source === 'public') {
+          statusParts.push(t('appointments.publicBookingBadge'))
+        }
+        if (apt.archived_at) {
+          statusParts.push(t('appointments.archivedBadge'))
+        }
+        const hostRole = apt.organizer?.role
+          ? t(`usersAdmin.roleNames.${apt.organizer.role}`, { defaultValue: apt.organizer.role })
+          : ''
+        const host =
+          apt.organizer?.full_name != null
+            ? hostRole
+              ? `${apt.organizer.full_name} (${hostRole})`
+              : apt.organizer.full_name
+            : '—'
+        return {
+          when: `${formatTime(apt.start_time)} – ${formatTime(apt.end_time)}\n${formatDateTime(apt.start_time)}`,
+          visitor_name: apt.visitor_name || '—',
+          visitor_company: apt.visitor_company || '—',
+          host,
+          status: statusParts.join(' · '),
+        }
+      }),
+    [sorted, formatTime, formatDateTime, t]
+  )
 
   const isVisitHost = (apt: AptRow) =>
     user?.id != null &&
@@ -1365,12 +1411,21 @@ export default function Appointments() {
         </Paper>
       )}
 
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <TableExportButton
+          filenameBase="appointments"
+          sheetName={t('appointments.title')}
+          columns={appointmentsExportColumns}
+          rows={appointmentsExportRows}
+          disabled={isLoading}
+        />
+      </Box>
+
       <TableContainer
         component={Paper}
         sx={{
+          ...tableContainerScrollSx,
           borderRadius: 3,
-          maxHeight: 'min(70vh, 720px)',
-          overflow: 'auto',
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
         }}
       >
