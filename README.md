@@ -46,3 +46,26 @@ npm run preview
 ```bash
 npm run lint
 ```
+
+
+## Monorepo (frontend + backend)
+
+Pour fusionner ce dépôt frontend avec le dépôt backend dans une structure monorepo, consultez :
+
+- `docs/monorepo-migration.md`
+- `scripts/prepare-monorepo.sh`
+
+- `scripts/create-sharptech-monorepo.sh` (crée explicitement la racine `sharptech-digital-sarl`)
+
+Le script prépare un dépôt monorepo cible avec `apps/frontend` et `apps/backend` en conservant l'historique Git via `git subtree`.
+
+
+### Création directe du monorepo `sharptech-digital-sarl`
+
+```bash
+scripts/create-sharptech-monorepo.sh <url_frontend> <url_backend> [branche] [target_dir]
+```
+
+Par défaut, le script crée le dossier `sharptech-digital-sarl` puis importe les deux historiques dans `apps/frontend` et `apps/backend`.
+
+Le script tente automatiquement un fallback SSH → HTTPS pour les URLs GitHub de type `git@github.com:...` si le fetch SSH échoue.
